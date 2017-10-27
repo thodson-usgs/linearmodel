@@ -1,5 +1,6 @@
 import abc
 import copy
+import re
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,8 +15,8 @@ from statsmodels.iolib.tableformatting import fmt_params
 from statsmodels.sandbox.regression.predstd import wls_prediction_std
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-from linearmodel import datamanager
-from linearmodel import stats as saidstats
+import datamanager
+import stats as saidstats
 
 
 class ModelException(Exception):
@@ -33,15 +34,15 @@ class InvalidVariableTransformError(ModelException):
     pass
 
 
-class RatingModel(abc.ABC):
+class LinearModel(abc.ABC):
     """Base class for rating models."""
 
-    _transform_variable_names = {None: 'x',
-                                 'log': 'log(x)',
-                                 'log10': 'log10(x)',
-                                 'pow2': 'power(x, 2)',
-                                 'sqrt': 'sqrt(x)'
-                                 }
+    _transform_variable_templates = {None: 'x',
+                                     'log': 'log(x)',
+                                     'log10': 'log10(x)',
+                                     'pow2': 'power(x, 2)',
+                                     'sqrt': 'sqrt(x)'
+                                     }
     _transform_functions = {None: lambda x: x,
                             'log': log,
                             'log10': log10,
@@ -51,7 +52,7 @@ class RatingModel(abc.ABC):
     _inverse_transform_functions = {None: lambda x: x,
                                     'log': np.exp,
                                     'log10': lambda x: power(10, x),
-                                    'pow2': lambda x: power(x, 1/2),
+                                    'pow2': lambda x: power(x, 1 / 2),
                                     'sqrt': lambda x: power(x, 2)
                                     }
     _float_string_format = '{:.5g}'
@@ -64,22 +65,20 @@ class RatingModel(abc.ABC):
         :param response_variable:
         """
 
+        self._is_init = False
+
         if not isinstance(data_manager, datamanager.DataManager):
             raise TypeError("data_manager must be type data.DataManager")
 
-        self._data_manager = data_manager
+        self._data_manager = copy.deepcopy(data_manager)
 
         variable_names = data_manager.get_variable_names()
 
-        # set the response variable, make sure it's valid
-        if response_variable is None:
-            self._response_variable = variable_names[0]
-        else:
-            if response_variable in variable_names:
-                self._response_variable = response_variable
-            else:
-                raise InvalidModelVariableNameError(
-                    "{} is not a valid response variable name.".format(response_variable))
+        # set the response variable
+        self._response_variable = None
+        if not response_variable:
+            response_variable = variable_names[0]
+        self.set_response_variable(response_variable)
 
         # initialize the explanatory variables attribute
         self._explanatory_variables = tuple(variable_names[1:])
@@ -97,6 +96,8 @@ class RatingModel(abc.ABC):
         # initialize the model attribute
         self._model = None
 
+        self._is_init = True
+
     def _add_transformed_variables(self, variable, dataset):
         """
 
@@ -105,12 +106,11 @@ class RatingModel(abc.ABC):
         :return:
         """
 
-        variable_transform = self._variable_transform[variable]
-        if variable_transform is not None:
-            var_transform_name = \
-                    self._transform_variable_names[variable_transform].replace('x', variable)
-            transform_function = self._transform_functions[variable_transform]
-            dataset.ix[:, var_transform_name] = transform_function(dataset[variable])
+        transform, raw_variable = self._find_raw_variable(variable)
+
+        if transform:
+            transform_function = self._transform_functions[transform]
+            dataset.ix[:, variable] = transform_function(dataset[raw_variable])
 
     def _check_variable_names(self, variable_names):
         """
@@ -134,19 +134,39 @@ class RatingModel(abc.ABC):
         :return:
         """
 
-        mdl_dataset = self._data_manager.get_variable(self._response_variable)
+        _, raw_response_variable = self._find_raw_variable(self._response_variable)
 
-        for variable in self._explanatory_variables:
+        mdl_dataset = self._data_manager.get_variable(raw_response_variable)
+
+        raw_explanatory_variables = [raw_variable for _, raw_variable in
+                                     map(self._find_raw_variable, self._explanatory_variables)]
+        for variable in raw_explanatory_variables:
             mdl_dataset[variable] = self._data_manager.get_variable(variable)
 
         self._model_dataset = mdl_dataset
 
         origin_data = []
-        for variable in (self._response_variable,) + self._explanatory_variables:
+        for variable in [raw_response_variable] + raw_explanatory_variables:
             for origin in self._data_manager.get_variable_origin(variable):
                 origin_data.append([variable, origin])
 
         self._model_data_origin = pd.DataFrame(data=origin_data, columns=['variable', 'origin'])
+
+    def _find_raw_variable(self, variable_name):
+
+        raw_variable = variable_name
+        variable_transform = None
+
+        for transform, template in self._transform_variable_templates.items():
+            if transform:
+                pattern = '^' + re.escape(template).replace('x', '(.+?)') + '$'
+                m = re.search(pattern, variable_name)
+                if m:
+                    raw_variable = m.group(1)
+                    variable_transform = transform
+                    break
+
+        return variable_transform, raw_variable
 
     def _get_dataset_table(self):
         """Create a SimpleTable for the model dataset
@@ -164,16 +184,27 @@ class RatingModel(abc.ABC):
 
         return observation_table
 
-    @classmethod
-    def _get_variable_transform(cls, variable, transform):
-        """
+    def _get_transformed_variable_names(self, variables):
+
+        transformed_variable_names = []
+
+        for variable in variables:
+            variable_transform = self._variable_transform[variable]
+            transformed_variable = self.get_variable_transform_name(variable, variable_transform)
+            transformed_variable_names.append(transformed_variable)
+
+        return transformed_variable_names
+
+    def _get_variable_transform(self, variable):
+        """Return variable transformation.
 
         :param variable:
-        :param transform:
         :return:
         """
 
-        return cls._transform_variable_names[transform].replace('x', variable)
+        self._check_variable_names([variable])
+
+        return self._variable_transform[variable]
 
     def _plot_predicted_vs_observed(self, ax):
         """
@@ -184,15 +215,15 @@ class RatingModel(abc.ABC):
         res = self._model.fit()
         model_observation_index = res.resid.index
 
-        observed_response = self._data_manager.get_variable(self._response_variable)
+        _, raw_response_name = self._find_raw_variable(self._response_variable)
+
+        observed_response = self._data_manager.get_variable(raw_response_name)
         observed_response = observed_response.ix[model_observation_index]
-        predicted_response = self.predict_response_variable(bias_correction=True)
+        predicted_response = self.predict_response_variable(raw_response=True, bias_correction=True)
 
-        ax.plot(observed_response, predicted_response[self._response_variable], '.', label='Observation')
+        ax.plot(observed_response, predicted_response[raw_response_name], '.', label='Observation')
 
-        response_variable_transform = self._variable_transform[self._response_variable]
-
-        # if (response_variable_transform == 'log') or (response_variable_transform == 'log10'):
+        # if (response_transform == 'log') or (response_transform == 'log10'):
         #     ax.set_xscale('log')
         #     ax.set_yscale('log')
 
@@ -202,17 +233,17 @@ class RatingModel(abc.ABC):
 
         ax.legend(loc='best', numpoints=1)
 
-        x_label = 'Observed ' + self._response_variable
-        y_label = 'Predicted ' + self._response_variable
+        x_label = 'Observed ' + raw_response_name
+        y_label = 'Predicted ' + raw_response_name
 
         ax.set_xlabel(x_label)
         ax.set_ylabel(y_label)
 
     def _update_model(self):
         """
-        
-        :return: 
-        
+
+        :return:
+
         """
 
         self._create_model_dataset()
@@ -225,7 +256,7 @@ class RatingModel(abc.ABC):
         :param transform:
         :return:
         """
-        if transform not in cls._transform_variable_names.keys():
+        if transform not in cls._transform_variable_templates.keys():
             raise InvalidVariableTransformError("{} is an unrecognized transformation.".format(transform))
 
     def exclude_observation(self, observation_time):
@@ -235,7 +266,7 @@ class RatingModel(abc.ABC):
         :type observation_time: pandas.DatetimeIndex
         :return:
         """
-
+        # TODO: Exclude by observation number
         self._excluded_observations = self._excluded_observations.append(observation_time)
         self._excluded_observations = self._excluded_observations.sort_values()
         self._excluded_observations = self._excluded_observations.drop_duplicates()
@@ -258,12 +289,16 @@ class RatingModel(abc.ABC):
 
         return copy.deepcopy(self._excluded_observations)
 
+    def get_explanatory_variables(self):
+
+        return self._get_transformed_variable_names(self._explanatory_variables)
+
     def get_model_dataset(self):
         """Return a DataFrame containing the observations used in the current model."""
 
         model_dataset = pd.DataFrame(self._model_dataset.copy(deep=True))
 
-        observation_numbers = np.arange(model_dataset.shape[0])+1
+        observation_numbers = np.arange(model_dataset.shape[0]) + 1
 
         model_dataset['Obs. number'] = observation_numbers
 
@@ -277,6 +312,7 @@ class RatingModel(abc.ABC):
             model_dataset.ix[:, 'Missing'] = model_dataset.isnull().any(axis=1)
             model_dataset.ix[:, 'Excluded'] = model_dataset.index.isin(self._excluded_observations)
 
+        # TODO: Order data columns
         return model_dataset
 
     @abc.abstractmethod
@@ -288,21 +324,16 @@ class RatingModel(abc.ABC):
 
         return self._response_variable
 
-    def get_variable_transform(self, variable):
-        """Return variable transformation.
+    @classmethod
+    def get_variable_transform_name(cls, variable, transform):
+        """
 
         :param variable:
+        :param transform:
         :return:
         """
 
-        self._check_variable_names([variable])
-
-        return self._variable_transform[variable]
-
-    def get_variable_names(self):
-        """Return a tuple containing the variable names within the model."""
-
-        return tuple(self._data_manager.get_variable_names())
+        return cls._transform_variable_templates[transform].replace('x', variable)
 
     def include_all_observations(self):
         """Include all observations that have previously been excluded."""
@@ -313,6 +344,7 @@ class RatingModel(abc.ABC):
     def include_observation(self, observation_time):
         """Include the observation given the time of the response variable observation."""
 
+        # TODO: Handle observation numbers
         restored_index = self._excluded_observations.isin(observation_time)
 
         self._excluded_observations = self._excluded_observations[~restored_index]
@@ -329,7 +361,7 @@ class RatingModel(abc.ABC):
         if plot_type == 'pred_vs_obs':
             self._plot_predicted_vs_observed(ax)
 
-        # TODO: Raise error if plot type not recognized
+            # TODO: Raise error if plot type not recognized
 
     def set_response_variable(self, response_variable):
         """Set the response variable of the model.
@@ -339,23 +371,15 @@ class RatingModel(abc.ABC):
         :return:
         """
 
-        self._check_variable_names([response_variable])
+        transform, raw_variable = self._find_raw_variable(response_variable)
+
+        self._check_variable_names([raw_variable])
+        self.check_transform(transform)
 
         self._response_variable = response_variable
 
-        self._update_model()
-
-    def transform_response_variable(self, transform):
-        """Transform the response variable.
-
-        :param transform: String representation of variable transform
-        :return:
-        """
-
-        self.check_transform(transform)
-        self._variable_transform[self._response_variable] = transform
-
-        self._create_model()
+        if self._is_init:
+            self._update_model()
 
     @abc.abstractmethod
     def predict_response_variable(self, **kwargs):
@@ -363,7 +387,7 @@ class RatingModel(abc.ABC):
         pass
 
 
-class OLSModel(RatingModel, abc.ABC):
+class OLSModel(LinearModel, abc.ABC):
     """Ordinary least squares (OLS) regression based rating model abstract class."""
 
     def _calc_ppcc(self):
@@ -386,9 +410,8 @@ class OLSModel(RatingModel, abc.ABC):
         """
 
         res = self._model.fit()
-        plotting_position = saidstats.calc_plotting_position(res.resid)
-        loc, scale = stats.norm.fit(res.resid)
-        dist = stats.norm(loc, scale)
+        plotting_position = saidstats.calc_plotting_position(res.resid, a=0.375)
+        dist = stats.norm()
         normal_quantile = dist.ppf(plotting_position)
 
         quantile_series = pd.Series(index=res.resid.index, data=normal_quantile, name='Normal quantile of residual')
@@ -430,8 +453,8 @@ class OLSModel(RatingModel, abc.ABC):
         response_data = np.tile(response_data, (1, residuals.shape[1], 1)) + residuals
 
         # apply the inverse transform function to the response data
-        response_variable_transform_func = self._variable_transform[self._response_variable]
-        inverse_transform_func = self._inverse_transform_functions[response_variable_transform_func]
+        response_variable_transform, raw_variable = self._find_raw_variable(self._response_variable)
+        inverse_transform_func = self._inverse_transform_functions[response_variable_transform]
         transformed_response_data = inverse_transform_func(response_data)
 
         smeared_data = np.mean(transformed_response_data, axis=1)
@@ -455,7 +478,7 @@ class OLSModel(RatingModel, abc.ABC):
 
         gleft = [number_of_observations, error_degrees_of_freedom, rmse, ppcc]
 
-        response_variable_transform = self._variable_transform[self._response_variable]
+        response_variable_transform = self._find_raw_variable(self._response_variable)
 
         if response_variable_transform:
 
@@ -492,10 +515,9 @@ class OLSModel(RatingModel, abc.ABC):
 
         x_prime_x_inverse = np.linalg.inv(np.dot(self._model.exog.transpose(), self._model.exog))
 
-        t_ppf_value = stats.t.ppf(1-alpha/2, self._model.df_resid)
+        t_ppf_value = stats.t.ppf(1 - alpha / 2, self._model.df_resid)
 
         for i in range(len(u_ci)):
-
             leverage = np.dot(exog[i, :], np.dot(x_prime_x_inverse, exog[i, :]))
 
             interval_distance = t_ppf_value * np.sqrt(res.mse_resid * leverage)
@@ -619,14 +641,15 @@ class OLSModel(RatingModel, abc.ABC):
 
         gright = [rsquared, adjusted_rsquared, fvalue, pvalue]
 
-        response_variable_transform = self._variable_transform[self._response_variable]
+        response_variable_transform, _ = self._find_raw_variable(self._response_variable)
 
         if response_variable_transform:
 
             if response_variable_transform is 'log10':
 
                 RMSE_pct = ('RMSE(%)',
-                            [self._float_string_format.format(100*np.sqrt(np.exp(np.log(10)**2 * res.mse_resid)-1))])
+                            [self._float_string_format.format(
+                                100 * np.sqrt(np.exp(np.log(10) ** 2 * res.mse_resid) - 1))])
 
                 gright.append(RMSE_pct)
 
@@ -655,35 +678,22 @@ class OLSModel(RatingModel, abc.ABC):
         q = np.array([0, 0.25, 0.5, 0.75, 1])
 
         excluded_observations = self._model_dataset.index.isin(self._excluded_observations) | \
-            np.any(self._model_dataset.isnull(), axis=1)
+                                np.any(self._model_dataset.isnull(), axis=1)
 
         for variable in model_variables:
 
-            variable_series = self._model_dataset.ix[~excluded_observations, variable]
+            variable_transform, raw_variable_name = self._find_raw_variable(variable)
 
-            quantiles = saidstats.calc_quantile(variable_series, q)
-
-            table_data[0].append(variable)
-            table_data[1].append(number_format_str.format(quantiles[0]))
-            table_data[2].append(number_format_str.format(quantiles[1]))
-            table_data[3].append(number_format_str.format(quantiles[2]))
-            table_data[4].append(number_format_str.format(variable_series.mean()))
-            table_data[5].append(number_format_str.format(quantiles[3]))
-            table_data[6].append(number_format_str.format(quantiles[4]))
-
-            variable_transform = self._variable_transform[variable]
+            raw_variable_series = self._model_dataset.ix[~excluded_observations, raw_variable_name]
 
             if variable_transform:
-
-                variable_transform_name = self._get_variable_transform(variable, variable_transform)
-
                 transform_function = self._transform_functions[variable_transform]
 
-                transformed_variable_series = transform_function(variable_series)
+                transformed_variable_series = transform_function(raw_variable_series)
 
                 transform_quantiles = saidstats.calc_quantile(transformed_variable_series, q)
 
-                table_data[0].append(variable_transform_name)
+                table_data[0].append(variable)
                 table_data[1].append(number_format_str.format(transform_quantiles[0]))
                 table_data[2].append(number_format_str.format(transform_quantiles[1]))
                 table_data[3].append(number_format_str.format(transform_quantiles[2]))
@@ -691,9 +701,19 @@ class OLSModel(RatingModel, abc.ABC):
                 table_data[5].append(number_format_str.format(transform_quantiles[3]))
                 table_data[6].append(number_format_str.format(transform_quantiles[4]))
 
+            quantiles = saidstats.calc_quantile(raw_variable_series, q)
+
+            table_data[0].append(raw_variable_name)
+            table_data[1].append(number_format_str.format(quantiles[0]))
+            table_data[2].append(number_format_str.format(quantiles[1]))
+            table_data[3].append(number_format_str.format(quantiles[2]))
+            table_data[4].append(number_format_str.format(raw_variable_series.mean()))
+            table_data[5].append(number_format_str.format(quantiles[3]))
+            table_data[6].append(number_format_str.format(quantiles[4]))
+
         table_header = [table_title]
 
-        table_header.extend([''] * (len(table_data[0])-1))
+        table_header.extend([''] * (len(table_data[0]) - 1))
 
         variable_summary = SimpleTable(data=table_data, headers=table_header)
 
@@ -729,7 +749,6 @@ class OLSModel(RatingModel, abc.ABC):
 
         # for variable in self._explanatory_variables:
         for exog_idx in range(1, exog.shape[1]):
-
             vif = variance_inflation_factor(exog, exog_idx)
 
             vif_data.append([self._float_string_format.format(vif)])
@@ -761,8 +780,8 @@ class OLSModel(RatingModel, abc.ABC):
 
         ax.legend(loc='best', numpoints=1)
 
-    def _plot_resid_qq(self, ax):
-        """Residual quantile-quantile
+    def _plot_resid_probability(self, ax):
+        """Residual probability plot
 
         :param ax:
         :return:
@@ -772,20 +791,23 @@ class OLSModel(RatingModel, abc.ABC):
 
         res = self._model.fit()
 
+        resid_mean = res.resid.mean()
+        resid_std = res.resid.std()
+
         ax.plot(res_normal_quantile, res.resid, '.')
 
         x_lim = ax.get_xlim()
         y_lim = ax.get_ylim()
 
-        low_value = np.min([x_lim[0], y_lim[0]])
-        high_value = np.max([x_lim[1], y_lim[1]])
+        # get a line to plot with the probability plot points
+        y_line = resid_mean + resid_std * np.array(x_lim)
 
-        ax.plot([low_value, high_value], [low_value, high_value], color='k', ls=':')
+        ax.plot(x_lim, y_line, color='k', ls=':')
 
         ax.set_xlim(x_lim)
         ax.set_ylim(y_lim)
 
-        ax.set_title('Q-Q plot')
+        ax.set_title('Residual probability plot')
 
         ax.set_xlabel('Normal quantile')
         ax.set_ylabel('Residual')
@@ -953,22 +975,19 @@ class OLSModel(RatingModel, abc.ABC):
 
         model_data_index = res.resid.index
 
-        response_variable = self.get_response_variable()
-
         # add fitted values
-        response_variable_transform = self._variable_transform[response_variable]
-        transformed_response_variable_name = self._get_variable_transform(response_variable,
-                                                                          response_variable_transform)
-        fitted_values = res.fittedvalues.rename('Fitted ' + transformed_response_variable_name)
+        fitted_values = res.fittedvalues.rename('Fitted ' + self._response_variable)
 
         # add raw residuals
         raw_residuals = res.resid.rename('Raw Residual')
 
         # add estimated response
+        _, raw_response_variable = self._find_raw_variable(self._response_variable)
         explanatory_data = datamanager.DataManager(self._model_dataset.ix[model_data_index, :], self._model_data_origin)
-        predicted_response = self.predict_response_variable(explanatory_data=explanatory_data, bias_correction=True)
-        estimated_response = predicted_response[response_variable]
-        estimated_response = estimated_response.rename('Estimated ' + response_variable)
+        predicted_response = self.predict_response_variable(explanatory_data=explanatory_data, raw_response=True,
+                                                            bias_correction=True)
+        estimated_response = predicted_response[raw_response_variable]
+        estimated_response = estimated_response.rename('Estimated ' + raw_response_variable)
 
         # add quantile
         quantile_series = self._calc_res_normal_quantile()
@@ -1025,8 +1044,9 @@ class OLSModel(RatingModel, abc.ABC):
 
         # get a table for the data origins
         data_origin = []
-        for variable in (self._response_variable, ) + self._explanatory_variables:
-            for origin in self._data_manager.get_variable_origin(variable):
+        for variable in (self._response_variable,) + self._explanatory_variables:
+            _, raw_variable = self._find_raw_variable(variable)
+            for origin in self._data_manager.get_variable_origin(raw_variable):
                 if origin not in data_origin:
                     data_origin.append([origin])
         origin_table = SimpleTable(data=data_origin, headers=['Data file location'])
@@ -1076,14 +1096,14 @@ class OLSModel(RatingModel, abc.ABC):
         summary.add_table_2cols(res, gleft=gleft, gright=gright)
 
         # add extreme influence and outlier table
-        high_leverage = ('High leverage:', self._float_string_format.format(3*res.params.shape[0]/res.nobs))
+        high_leverage = ('High leverage:', self._float_string_format.format(3 * res.params.shape[0] / res.nobs))
         extreme_outlier = ('Extreme outlier (Standardized residual):', self._float_string_format.format(3))
         dfn = res.params.shape[0] + 1
         dfd = res.nobs + res.params.shape[0]
         high_influence_cooksd = ("High influence (Cook's D)",
                                  self._float_string_format.format(stats.f.ppf(0.9, dfn=dfn, dfd=dfd)))
         high_influence_dffits = ("High influence (DFFITS)",
-                                 self._float_string_format.format(2*np.sqrt(res.params.shape[0]/res.nobs)))
+                                 self._float_string_format.format(2 * np.sqrt(res.params.shape[0] / res.nobs)))
         influence_and_outlier_table_data = [high_leverage,
                                             extreme_outlier,
                                             high_influence_cooksd,
@@ -1107,7 +1127,7 @@ class OLSModel(RatingModel, abc.ABC):
 
         table_title = 'Response variable summary'
 
-        return self._get_variable_summary((self._response_variable, ), table_title)
+        return self._get_variable_summary((self._response_variable,), table_title)
 
     @abc.abstractmethod
     def plot(self, plot_type, ax):
@@ -1119,16 +1139,15 @@ class OLSModel(RatingModel, abc.ABC):
         """
 
         if plot_type is 'resid_vs_fitted':
-
             self._plot_resid_vs_fitted(ax)
 
         if plot_type is 'resid_vs_time':
 
             self._plot_resid_vs_time(ax)
 
-        elif plot_type is 'resid_qq':
+        elif plot_type is 'resid_probability':
 
-            self._plot_resid_qq(ax)
+            self._plot_resid_probability(ax)
 
         elif plot_type is 'serial_correlation':
 
@@ -1142,7 +1161,8 @@ class OLSModel(RatingModel, abc.ABC):
 
             super().plot(plot_type, ax)
 
-    def predict_response_variable(self, explanatory_data=None, bias_correction=False, prediction_interval=False):
+    def predict_response_variable(self, explanatory_data=None, bias_correction=False, raw_response=False,
+                                  prediction_interval=False):
         """Predict the response of the model.
 
         If prediction_interval=True, then a DataFrame with the mean response and upper and lower 90% prediction
@@ -1152,54 +1172,61 @@ class OLSModel(RatingModel, abc.ABC):
         :type explanatory_data: datamanager.DataManager
         :param bias_correction: Indicate whether or not to use bias correction
         :type bias_correction: bool
+        :param raw_response
+        :type raw_response: bool
         :param prediction_interval: Indicate whether or not to return a 90% prediction interval
         :type prediction_interval: bool
         :return:
         """
 
-        if self._model:
+        # TODO: Clean this mess up!
 
-            # get the model results
-            res = self._model.fit()
+        # get the model results
+        res = self._model.fit()
 
-            # get the explanatory data DataFrame
-            if explanatory_data:
-                explanatory_df = explanatory_data.get_data()
-            else:
-                explanatory_df = self._data_manager.get_data()
-                res = self._model.fit()
-                observation_index = res.resid.index
-                explanatory_df = explanatory_df.ix[observation_index]
+        # get the explanatory data DataFrame
+        if explanatory_data:
+            explanatory_df = explanatory_data.get_data()
+        else:
+            explanatory_df = self._data_manager.get_data()
+            observation_index = res.resid.index
+            explanatory_df = explanatory_df.ix[observation_index]
 
-            exog = self._get_exogenous_matrix(explanatory_df)
+        exog = self._get_exogenous_matrix(explanatory_df)
 
-            # predicted response variable
-            mean_response = self._model.predict(res.params, exog=exog)
-            mean_response = np.expand_dims(mean_response, axis=1)
+        # predicted response variable
+        mean_response = self._model.predict(res.params, exog=exog)
+        mean_response = np.expand_dims(mean_response, axis=1)
 
-            if prediction_interval:
+        if raw_response:
+            response_variable_transform, response_name = self._find_raw_variable(self._response_variable)
+        else:
+            response_name = self._response_variable
 
-                # confidence level for two - sided hypothesis
-                confidence_level = 0.1  # 90% prediction interval
-                confidence_level_text = '{:.1f}'.format(100*(1-confidence_level))
+        if prediction_interval:
 
-                _, interval_l, interval_u = wls_prediction_std(res, exog=exog, alpha=confidence_level)
+            # confidence level for two - sided hypothesis
+            confidence_level = 0.1  # 90% prediction interval
+            confidence_level_text = '{:.1f}'.format(100 * (1 - confidence_level))
 
-                interval_l = np.expand_dims(interval_l, axis=1)
-                interval_u = np.expand_dims(interval_u, axis=1)
+            _, interval_l, interval_u = wls_prediction_std(res, exog=exog, alpha=confidence_level)
 
-                response_data = np.dstack((interval_l, mean_response, interval_u))
+            interval_l = np.expand_dims(interval_l, axis=1)
+            interval_u = np.expand_dims(interval_u, axis=1)
 
-                columns = [self._response_variable + '_L' + confidence_level_text,
-                           self._response_variable,
-                           self._response_variable + '_U' + confidence_level_text
-                           ]
+            response_data = np.dstack((interval_l, mean_response, interval_u))
 
-            else:
+            columns = [response_name + '_L' + confidence_level_text,
+                       response_name,
+                       response_name + '_U' + confidence_level_text]
 
-                response_data = np.expand_dims(mean_response, axis=2)
+        else:
 
-                columns = [self._response_variable]
+            response_data = np.expand_dims(mean_response, axis=2)
+
+            columns = [response_name]
+
+        if raw_response:
 
             if bias_correction:
 
@@ -1211,21 +1238,19 @@ class OLSModel(RatingModel, abc.ABC):
                 response_data = np.squeeze(response_data, axis=1)
 
                 # apply the inverse transform to the response data
-                response_variable_transform_func = self._variable_transform[self._response_variable]
-                inverse_transform_func = self._inverse_transform_functions[response_variable_transform_func]
+                inverse_transform_func = self._inverse_transform_functions[response_variable_transform]
                 predicted_data = inverse_transform_func(response_data)
 
-            predicted = pd.DataFrame(data=predicted_data, index=explanatory_df.index, columns=columns)
-            predicted = predicted.join(explanatory_df[list(self._explanatory_variables)], how='outer')
-
         else:
+            predicted_data = np.squeeze(response_data, axis=1)
 
-            predicted = pd.DataFrame(columns=[self._response_variable] + list(self._explanatory_variables))
+        predicted = pd.DataFrame(data=predicted_data, index=explanatory_df.index, columns=columns)
+        predicted = predicted.join(explanatory_df[list(self._explanatory_variables)], how='outer')
 
         return predicted
 
 
-class SimpleLinearOLSModel(OLSModel):
+class SimpleOLSModel(OLSModel):
     """Class for OLS simple linear regression (SLR) ratings."""
 
     def __init__(self, data_manager, response_variable=None, explanatory_variable=None):
@@ -1252,12 +1277,12 @@ class SimpleLinearOLSModel(OLSModel):
 
         explanatory_variable = self.get_explanatory_variable()
 
-        assert(explanatory_variable in exogenous_df.keys())
+        assert (explanatory_variable in exogenous_df.keys())
 
         exog = pd.DataFrame()
 
         explanatory_transform = self._variable_transform[explanatory_variable]
-        transformed_variable_name = self._get_variable_transform(explanatory_variable, explanatory_transform)
+        transformed_variable_name = self.get_variable_transform_name(explanatory_variable, explanatory_transform)
         transform_function = self._transform_functions[explanatory_transform]
         exog[transformed_variable_name] = transform_function(exogenous_df[explanatory_variable])
         exog = sm.add_constant(exog)
@@ -1273,17 +1298,8 @@ class SimpleLinearOLSModel(OLSModel):
 
         gleft = super()._get_left_summary_table(res)
 
-        removed_observation_index = self._model_dataset.index.isin(self._excluded_observations)
-        null_value_index = self._model_dataset.isnull().any(axis=1)
-        observation_index = ~(removed_observation_index | null_value_index)
-
-        explanatory_variable_transform = self._variable_transform[self._explanatory_variables[0]]
-        explanatory_transform_func = self._transform_functions[explanatory_variable_transform]
-        x = explanatory_transform_func(self._model_dataset.ix[observation_index, self._explanatory_variables[0]])
-
-        response_variable_transform = self._variable_transform[self._response_variable]
-        response_transform_func = self._transform_functions[response_variable_transform]
-        y = response_transform_func(self._model_dataset.ix[observation_index, self._response_variable])
+        y = self._model.endog
+        x = self._model.exog[:, 1]
 
         linear_corr = ('Linear correlation coefficient', [self._float_string_format.format(stats.pearsonr(x, y)[0])])
 
@@ -1320,13 +1336,7 @@ class SimpleLinearOLSModel(OLSModel):
 
             explanatory_variable = self.get_explanatory_variable()
 
-            response_var_transform = self._variable_transform[self._response_variable]
-            model_response_var = self._get_variable_transform(self._response_variable, response_var_transform)
-
-            explanatory_var_transform = self._variable_transform[explanatory_variable]
-            model_explanatory_var = self._get_variable_transform(explanatory_variable, explanatory_var_transform)
-
-            model_formula = model_response_var + ' ~ ' + model_explanatory_var
+            model_formula = self._response_variable + ' ~ ' + explanatory_variable
 
         else:
 
@@ -1356,14 +1366,15 @@ class SimpleLinearOLSModel(OLSModel):
         x_obs = self._model.exog[:, 1]
         y_obs = self._model.endog
 
-        explanatory_variable_transform = self.get_variable_transform(self._explanatory_variables[0])
-        response_variable_transform = self.get_variable_transform(self._response_variable)
+        explanatory_variable_transform, raw_explanatory_variable = \
+            self._find_raw_variable(self._explanatory_variables[0])
+        response_variable_transform, raw_response_variable = self._find_raw_variable(self._response_variable)
 
         # get non-transformed values to predict response values
         explan_inverse_func = self._inverse_transform_functions[explanatory_variable_transform]
         explanatory_obs = explan_inverse_func(x_obs)
         explanatory_fit = np.linspace(np.min(explanatory_obs), np.max(explanatory_obs))
-        explanatory_df = pd.DataFrame(data=explanatory_fit, columns=[self.get_explanatory_variable()])
+        explanatory_df = pd.DataFrame(data=explanatory_fit, columns=[raw_explanatory_variable])
 
         # get the fitted response and confidence intervals
         exog_fit = self._get_exogenous_matrix(explanatory_df).as_matrix()
@@ -1399,7 +1410,7 @@ class SimpleLinearOLSModel(OLSModel):
                                       explanatory_obs, response_obs,
                                       explanatory_fit, response_fit,
                                       response_fit_l_ci, response_fit_u_ci,
-                                      self.get_explanatory_variable(), self.get_response_variable())
+                                      raw_explanatory_variable, raw_response_variable)
 
         # call super class plotting function for other plot types
         else:
@@ -1415,24 +1426,16 @@ class SimpleLinearOLSModel(OLSModel):
         :return:
         """
 
-        self._check_variable_names([variable])
+        variable_transform, raw_variable = self._find_raw_variable(variable)
+        self._check_variable_names([raw_variable])
+        self.check_transform(variable_transform)
+
         self._explanatory_variables = (variable,)
-        self._update_model()
-
-    def transform_explanatory_variable(self, transform):
-        """
-
-        :param transform:
-        :return:
-        """
-
-        self.check_transform(transform)
-        self._variable_transform[self._explanatory_variables[0]] = transform
-
-        self._create_model()
+        if self._is_init:
+            self._update_model()
 
 
-class MultipleLinearOLSModel(OLSModel):
+class MultipleOLSModel(OLSModel):
     """"""
 
     def __init__(self, data_manager, response_variable=None, explanatory_variables=None):
@@ -1517,28 +1520,19 @@ class MultipleLinearOLSModel(OLSModel):
         """
 
         for variable in self._explanatory_variables:
-            assert(variable in exogenous_df.keys())
+            assert (variable in exogenous_df.keys())
 
         exog = pd.DataFrame()
 
         for variable in self._explanatory_variables:
-
             transform = self._variable_transform[variable]
             transform_function = self._transform_functions[transform]
-            transformed_variable_name = self._get_variable_transform(variable, transform)
+            transformed_variable_name = self.get_variable_transform_name(variable, transform)
             exog[transformed_variable_name] = transform_function(exogenous_df[variable])
 
         exog = sm.add_constant(exog)
 
         return exog
-
-    def get_explanatory_variables(self):
-        """
-
-        :return:
-        """
-
-        return tuple(self._explanatory_variables)
 
     def get_model_formula(self):
         """
@@ -1549,12 +1543,12 @@ class MultipleLinearOLSModel(OLSModel):
         if self._response_variable and self._explanatory_variables[0]:
 
             response_var_transform = self._variable_transform[self._response_variable]
-            model_response_var = self._get_variable_transform(self._response_variable, response_var_transform)
+            model_response_var = self.get_variable_transform_name(self._response_variable, response_var_transform)
 
             explanatory_vars_transform = []
             for variable in self._explanatory_variables:
                 explan_transform = self._variable_transform[variable]
-                explanatory_vars_transform.append(self._get_variable_transform(variable, explan_transform))
+                explanatory_vars_transform.append(self.get_variable_transform_name(variable, explan_transform))
 
             model_formula = model_response_var + ' ~ ' + ' + '.join(explanatory_vars_transform)
 
@@ -1593,11 +1587,10 @@ class MultipleLinearOLSModel(OLSModel):
             # TODO: Handle case where ax is an axes
 
             for i in range(number_of_explanatory_variables):
-
-                explanatory_variable = self._model.exog_names[i+1]
+                explanatory_variable = self._model.exog_names[i + 1]
                 estimated_explanatory = self._estimate_explanatory_variable(explanatory_variable)
                 estimated_response = self._estimate_response_wo_explanatory_variable(explanatory_variable)
-                adjusted_explanatory = self._model.exog[:, i+1] - estimated_explanatory
+                adjusted_explanatory = self._model.exog[:, i + 1] - estimated_explanatory
                 adjusted_response = self._model.endog - estimated_response
                 ax[i].plot(adjusted_explanatory, adjusted_response, '.')
 
@@ -1631,20 +1624,6 @@ class MultipleLinearOLSModel(OLSModel):
 
         self._update_model()
 
-    def transform_explanatory_variable(self, explanatory_variable, transform):
-        """
-
-        :param explanatory_variable:
-        :param transform:
-        :return:
-        """
-
-        self.check_transform(transform)
-        self._check_variable_names([explanatory_variable])
-        self._variable_transform[explanatory_variable] = transform
-
-        self._create_model()
-
 
 class ComplexOLSModel(OLSModel):
     """"""
@@ -1674,13 +1653,12 @@ class ComplexOLSModel(OLSModel):
 
         explanatory_variable = self.get_explanatory_variable()
 
-        assert(explanatory_variable in exogenous_df.keys())
+        assert (explanatory_variable in exogenous_df.keys())
 
         exog = pd.DataFrame()
 
         for transform in self._explanatory_variable_transform:
-
-            transformed_variable_name = self._get_variable_transform(explanatory_variable, transform)
+            transformed_variable_name = self.get_variable_transform_name(explanatory_variable, transform)
             transform_function = self._transform_functions[transform]
             exog[transformed_variable_name] = transform_function(exogenous_df[explanatory_variable])
 
@@ -1718,12 +1696,12 @@ class ComplexOLSModel(OLSModel):
         if self._response_variable and self._explanatory_variables[0]:
 
             response_var_transform = self._variable_transform[self._response_variable]
-            model_response_var = self._get_variable_transform(self._response_variable, response_var_transform)
+            model_response_var = self.get_variable_transform_name(self._response_variable, response_var_transform)
 
             explanatory_variables = []
             for transform in self._explanatory_variable_transform:
-
-                explanatory_variables.append(self._get_variable_transform(self._explanatory_variables[0], transform))
+                explanatory_variables.append(self.get_variable_transform_name(self._explanatory_variables[0],
+                                                                              transform))
 
             model_formula = model_response_var + ' ~ ' + ' + '.join(explanatory_variables)
 
@@ -1743,7 +1721,6 @@ class ComplexOLSModel(OLSModel):
         """
 
         if ax is None:
-
             fig = plt.figure()
             ax = fig.add_subplot(111)
 
@@ -1764,7 +1741,7 @@ class ComplexOLSModel(OLSModel):
 
             # get the inversely transformed fitted response variable and confidence intervals
             y_fit, l_ci, u_ci = self._get_model_confidence_mean(exog_fit)
-            response_variable_transform = self.get_variable_transform(response_variable)
+            response_variable_transform = self._get_variable_transform(response_variable)
             response_inverse_func = self._inverse_transform_functions[response_variable_transform]
             y_fit = response_inverse_func(y_fit)
             l_ci = response_inverse_func(l_ci)
@@ -1814,7 +1791,7 @@ class ComplexOLSModel(OLSModel):
         self._update_model()
 
 
-class CompoundRatingModel(RatingModel):
+class CompoundLinearModel(LinearModel):
     """"""
 
     def __init__(self, data_manager, response_variable=None, explanatory_variable=None):
@@ -1853,10 +1830,8 @@ class CompoundRatingModel(RatingModel):
 
         for i in range(self.get_number_of_segments()):
             lower_bound = self._breakpoints[i]
-            upper_bound = self._breakpoints[i+1]
+            upper_bound = self._breakpoints[i + 1]
 
-            # 12/2/2016
-            # switched around compare statement. new version of pandas doesn't like the other way for some reason - MMD
             segment_range_index = (self._model_dataset.ix[:, self._explanatory_variables[0]] >= lower_bound) & \
                                   (self._model_dataset.ix[:, self._explanatory_variables[0]] < upper_bound)
 
@@ -1866,13 +1841,14 @@ class CompoundRatingModel(RatingModel):
                     origin_data.append([variable, origin])
             model_data_origin = pd.DataFrame(data=origin_data, columns=['variable', 'origin'])
 
-            segment_data_manager = datamanager.DataManager(self._model_dataset.ix[segment_range_index, :], model_data_origin)
+            segment_data_manager = datamanager.DataManager(self._model_dataset.ix[segment_range_index, :],
+                                                           model_data_origin)
 
             segment_model = ComplexOLSModel(segment_data_manager,
                                             response_variable=self.get_response_variable(),
                                             explanatory_variable=self.get_explanatory_variable())
             segment_model.exclude_observation(self.get_excluded_observations())
-            segment_model.transform_response_variable(self._variable_transform[self._response_variable])
+            segment_model.set_response_variable(self._variable_transform[self._response_variable])
 
             self._model.append(segment_model)
 
@@ -1904,7 +1880,7 @@ class CompoundRatingModel(RatingModel):
 
         if segment:
             self._check_segment_number(segment)
-            self._model[segment-1].add_explanatory_var_transform(transform)
+            self._model[segment - 1].add_explanatory_var_transform(transform)
         else:
             for segment_model in self._model:
                 segment_model.add_explanatory_var_transform(transform)
@@ -1935,7 +1911,7 @@ class CompoundRatingModel(RatingModel):
 
         for i in range(self.get_number_of_segments()):
             segment_model_dataset = self._model[i].get_model_dataset()
-            segment_model_dataset['Segment'] = i+1
+            segment_model_dataset['Segment'] = i + 1
             model_dataset = pd.concat([model_dataset, segment_model_dataset], verify_integrity=True)
 
         model_dataset.sort_index(inplace=True)
@@ -1953,14 +1929,13 @@ class CompoundRatingModel(RatingModel):
 
             self._check_segment_number(segment)
 
-            model_formula = self._model[segment-1].get_model_formula()
+            model_formula = self._model[segment - 1].get_model_formula()
 
         else:
 
             model_formula = []
 
             for segment_model in self._model:
-
                 model_formula.append(segment_model.get_model_formula())
 
         return model_formula
@@ -1982,12 +1957,12 @@ class CompoundRatingModel(RatingModel):
 
         number_of_segments = self.get_number_of_segments()
 
-        spacer_table = SimpleTable(data=['='*50])
+        spacer_table = SimpleTable(data=['=' * 50])
 
         for i in range(1, number_of_segments):
             segment_model_report = self._model[i].get_model_report()
             lower_bound = self._float_string_format.format(self._breakpoints[i])
-            upper_bound = self._float_string_format.format(self._breakpoints[i+1])
+            upper_bound = self._float_string_format.format(self._breakpoints[i + 1])
             report_title = 'Segment model range: ' \
                            + lower_bound \
                            + ' <= ' + self._explanatory_variables[0] \
@@ -2014,12 +1989,12 @@ class CompoundRatingModel(RatingModel):
 
         number_of_segments = self.get_number_of_segments()
 
-        spacer_table = SimpleTable(data=['='*50])
+        spacer_table = SimpleTable(data=['=' * 50])
 
         for i in range(1, number_of_segments):
             segment_model_summary = self._model[i].get_model_summary()
             lower_bound = self._float_string_format.format(self._breakpoints[i])
-            upper_bound = self._float_string_format.format(self._breakpoints[i+1])
+            upper_bound = self._float_string_format.format(self._breakpoints[i + 1])
             summary_title = 'Segment model range: ' \
                             + lower_bound \
                             + ' <= ' + self._explanatory_variables[0] \
@@ -2035,7 +2010,7 @@ class CompoundRatingModel(RatingModel):
         :return:
         """
 
-        return len(self._breakpoints)-1
+        return len(self._breakpoints) - 1
 
     def plot(self, plot_type='variable_scatter', ax=None):
         """
@@ -2086,7 +2061,7 @@ class CompoundRatingModel(RatingModel):
 
         if segment:
             self._check_segment_number(segment)
-            self._model[segment-1].remove_explanatory_var_transform(transform)
+            self._model[segment - 1].remove_explanatory_var_transform(transform)
 
         else:
 
@@ -2116,12 +2091,11 @@ class CompoundRatingModel(RatingModel):
 
             self._check_segment_number(segment)
 
-            self._model[segment-1].reset_explanatory_var_transform()
+            self._model[segment - 1].reset_explanatory_var_transform()
 
         else:
 
             for segment_model in self._model:
-
                 segment_model.reset_explanatory_var_transform()
 
     def set_explanatory_variable(self, explanatory_variable):
@@ -2136,21 +2110,7 @@ class CompoundRatingModel(RatingModel):
 
         self._update_model()
 
-    def transform_response_variable(self, transform):
-        """
-
-        :param transform:
-        :return:
-        """
-
-        self.check_transform(transform)
-
-        self._variable_transform[self._response_variable] = transform
-
-        for segment_model in self._model:
-            segment_model.transform_response_variable(transform)
-
-    def predict_response_variable(self, explanatory_data=None, bias_correction=False, prediction_interval=False):
+    def predict_response_variable(self, **kwargs):
         """
 
         :param explanatory_data:
@@ -2161,6 +2121,8 @@ class CompoundRatingModel(RatingModel):
 
         predicted = pd.DataFrame()
 
+        explanatory_data = kwargs.pop('explanatory_data', None)
+
         if explanatory_data:
             explanatory_df = explanatory_data.get_data()
             explanatory_origin = explanatory_data.get_origin()
@@ -2170,9 +2132,12 @@ class CompoundRatingModel(RatingModel):
 
         explanatory_series = explanatory_df[self.get_explanatory_variable()]
 
+        bias_correction = kwargs.pop('bias_correction', False)
+        prediction_interval = kwargs.pop('prediction_interval', False)
+
         for i in range(self.get_number_of_segments()):
             lower_bound = self._breakpoints[i]
-            upper_bound = self._breakpoints[i+1]
+            upper_bound = self._breakpoints[i + 1]
             segment_index = (lower_bound <= explanatory_series) & (explanatory_series < upper_bound)
             predictor_data_manager = datamanager.DataManager(explanatory_df.ix[segment_index, :],
                                                              explanatory_origin)
