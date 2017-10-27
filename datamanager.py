@@ -389,10 +389,10 @@ class DataManager:
 
         return variable_origin
 
-    def match_data(self, surrogate_data, variable_name=None, time_window_width=0, match_method='nearest'):
+    def match_data(self, other, variable_name=None, time_window_width=0, match_method='nearest'):
         """
 
-        :param surrogate_data:
+        :param other:
         :param variable_name:
         :param time_window_width:
         :param match_method:
@@ -400,11 +400,11 @@ class DataManager:
         """
 
         # initialize data for a DataManager
-        matched_surrogate_data = pd.DataFrame(index=self._data.index)
+        matched_data = pd.DataFrame(index=self._data.index)
         surrogate_variable_origin_data = []
 
         if variable_name is None:
-            variable_names = surrogate_data.get_variable_names()
+            variable_names = other.get_variable_names()
         else:
             variable_names = [variable_name]
 
@@ -415,23 +415,23 @@ class DataManager:
                 continue
 
             # iterate through all rows and add the matched surrogate observation
-            variable_series = pd.Series(index=matched_surrogate_data.index, name=variable)
-            for index, _ in matched_surrogate_data.iterrows():
-                observation_value = surrogate_data.get_variable_observation(variable, index,
-                                                                            time_window_width=time_window_width,
-                                                                            match_method=match_method)
+            variable_series = pd.Series(index=matched_data.index, name=variable)
+            for index, _ in matched_data.iterrows():
+                observation_value = other.get_variable_observation(variable, index,
+                                                                   time_window_width=time_window_width,
+                                                                   match_method=match_method)
                 variable_series[index] = observation_value
 
             # add the origins of the variable to the origin data list
-            for origin in surrogate_data.get_variable_origin(variable):
+            for origin in other.get_variable_origin(variable):
                 surrogate_variable_origin_data.append([variable, origin])
 
             # add the matched variable series to the dataframe
-            matched_surrogate_data[variable] = variable_series
+            matched_data[variable] = variable_series
 
         # create a data manager
         surrogate_variable_origin = pd.DataFrame(data=surrogate_variable_origin_data, columns=['variable', 'origin'])
-        matched_surrogate_data_manager = DataManager(matched_surrogate_data, surrogate_variable_origin)
+        matched_surrogate_data_manager = DataManager(matched_data, surrogate_variable_origin)
 
         # add the matched surrogate data manager to the constituent data manager
         return self.add_data(matched_surrogate_data_manager)
