@@ -15,8 +15,8 @@ from statsmodels.iolib.tableformatting import fmt_params
 from statsmodels.sandbox.regression.predstd import wls_prediction_std
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-from . import datamanager
-from . import stats as saidstats
+from linearmodel import datamanager
+from linearmodel import stats as saidstats
 
 
 class ModelException(Exception):
