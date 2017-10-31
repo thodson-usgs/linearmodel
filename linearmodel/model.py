@@ -1803,7 +1803,6 @@ class CompoundLinearModel(LinearModel):
         self._breakpoints = np.array([-np.inf, np.inf])
 
         self._model = []
-        # self._create_model_dataset()
 
         if explanatory_variable:
             self.set_explanatory_variable(explanatory_variable)
@@ -1848,7 +1847,6 @@ class CompoundLinearModel(LinearModel):
                                             response_variable=self.get_response_variable(),
                                             explanatory_variable=self.get_explanatory_variable())
             segment_model.exclude_observation(self.get_excluded_observations())
-            segment_model.set_response_variable(self._variable_transform[self._response_variable])
 
             self._model.append(segment_model)
 
