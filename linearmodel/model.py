@@ -251,10 +251,11 @@ class LinearModel(abc.ABC):
 
     @classmethod
     def check_transform(cls, transform):
-        """
+        """Check if transform is a valid variable transform
 
-        :param transform:
-        :return:
+        :param transform: Variable transform
+        :type transform: str
+        :return: bool
         """
         if transform not in cls._transform_variable_templates.keys():
             raise InvalidVariableTransformError("{} is an unrecognized transformation.".format(transform))
@@ -262,7 +263,7 @@ class LinearModel(abc.ABC):
     def exclude_observation(self, observation_time):
         """Exclude observation from the model.
 
-        :param observation_time:
+        :param observation_time: Time to exclude from model
         :type observation_time: pandas.DatetimeIndex
         :return:
         """
@@ -288,10 +289,6 @@ class LinearModel(abc.ABC):
         """
 
         return copy.deepcopy(self._excluded_observations)
-
-    def get_explanatory_variables(self):
-
-        return self._get_transformed_variable_names(self._explanatory_variables)
 
     def get_model_dataset(self):
         """Return a DataFrame containing the observations used in the current model."""
@@ -326,11 +323,13 @@ class LinearModel(abc.ABC):
 
     @classmethod
     def get_variable_transform_name(cls, variable, transform):
-        """
+        """Returns the name of a variable with the requested transform
 
-        :param variable:
-        :param transform:
-        :return:
+        :param variable: Variable name
+        :type variable: str
+        :param transform: Transformation
+        :type transform: str
+        :return: Transformed variable
         """
 
         return cls._transform_variable_templates[transform].replace('x', variable)
@@ -437,7 +436,7 @@ class OLSModel(LinearModel, abc.ABC):
         self._model = model
 
     def _get_duans_smearing_estimate(self, response_data):
-        """
+        """Calculate the bias-corrected estimate using Duan's smearing method
 
         :param response_data:
         :return:
@@ -499,10 +498,10 @@ class OLSModel(LinearModel, abc.ABC):
         return gleft
 
     def _get_model_confidence_mean(self, exog, alpha=0.1):
-        """
+        """Calculate the mean and upper and lower confidence intervals
 
-        :param exog:
-        :param alpha:
+        :param exog: Exogenous matrix
+        :param alpha: Significance level
         :return:
         """
 
@@ -720,7 +719,7 @@ class OLSModel(LinearModel, abc.ABC):
         return variable_summary
 
     def _get_variance_covariance_table(self):
-        """
+        """Return a table containing the variance-covariance matrix
 
         :return:
         """
@@ -758,7 +757,7 @@ class OLSModel(LinearModel, abc.ABC):
         return vif_table
 
     def _plot_model_pred_vs_obs(self, ax):
-        """
+        """Plot the predicted versus observed response variable as the response variable is used in the model
 
         :param ax:
         :return:
@@ -1319,7 +1318,7 @@ class SimpleOLSModel(OLSModel):
         return gright
 
     def get_explanatory_variable(self):
-        """Returns the name of the explanatory variable used in the SLR.
+        """Returns the explanatory variable used in the SLR
 
         :return: Name of explanatory variable
         """
@@ -1327,7 +1326,7 @@ class SimpleOLSModel(OLSModel):
         return self._explanatory_variables[0]
 
     def get_model_formula(self):
-        """
+        """Return the formula of the model
 
         :return:
         """
@@ -1420,7 +1419,7 @@ class SimpleOLSModel(OLSModel):
         return ax
 
     def set_explanatory_variable(self, variable):
-        """
+        """Set the explanatory variable used in the model
 
         :param variable:
         :return:
@@ -1535,7 +1534,7 @@ class MultipleOLSModel(OLSModel):
         return exog
 
     def get_model_formula(self):
-        """
+        """Return the formula of the model
 
         :return:
         """
@@ -1612,9 +1611,10 @@ class MultipleOLSModel(OLSModel):
         return ax
 
     def set_explanatory_variables(self, variables):
-        """
+        """Set the explanatory variables for the model
 
-        :param variables:
+        :param variables: Explanatory variables
+        :type variables:
         :return:
         """
 
@@ -1667,7 +1667,7 @@ class ComplexOLSModel(OLSModel):
         return exog
 
     def add_explanatory_var_transform(self, transform):
-        """
+        """Add a transformation to the explanatory variable
 
         :param transform:
         :return:
@@ -1680,7 +1680,7 @@ class ComplexOLSModel(OLSModel):
         self._create_model()
 
     def get_explanatory_variable(self):
-        """
+        """Return the current explanatory variable
 
         :return:
         """
@@ -1688,7 +1688,7 @@ class ComplexOLSModel(OLSModel):
         return self._explanatory_variables[0]
 
     def get_model_formula(self):
-        """
+        """Return the formula of the model
 
         :return:
         """
@@ -1713,6 +1713,19 @@ class ComplexOLSModel(OLSModel):
 
     def plot(self, plot_type='variable_scatter', ax=None, add_legend=True):
         """
+
+        Plot types:
+            variable_scatter
+            resid_vs_fitted
+            resid_vs_time
+            resid_qq
+            serial_correlation
+            model_pred_vs_obs
+            pred_vs_obs
+
+        :param plot_type:
+        :param ax:
+        :return:
 
         :param plot_type:
         :param ax:
@@ -1851,9 +1864,9 @@ class CompoundLinearModel(LinearModel):
             self._model.append(segment_model)
 
     def add_breakpoint(self, new_breakpoint):
-        """
+        """Add a breakpoint to separate linear models.
 
-        :param new_breakpoint:
+        :param new_breakpoint: Value of explanatory variable to set a breakpoint
         :type new_breakpoint: abc.Numeric
         :return:
         """
@@ -1867,7 +1880,7 @@ class CompoundLinearModel(LinearModel):
         self._create_model()
 
     def add_explanatory_var_transform(self, transform, segment=None):
-        """
+        """Adds an explanatory variable transformation to a segment model
 
         :param segment:
         :param transform:
@@ -1884,7 +1897,7 @@ class CompoundLinearModel(LinearModel):
                 segment_model.add_explanatory_var_transform(transform)
 
     def get_breakpoints(self):
-        """
+        """Returns the current breakpoints used in the model
 
         :return:
         """
@@ -1892,7 +1905,7 @@ class CompoundLinearModel(LinearModel):
         return copy.deepcopy(self._breakpoints)
 
     def get_explanatory_variable(self):
-        """
+        """Returns the explanatory variable used in the SLR
 
         :return:
         """
@@ -1900,7 +1913,20 @@ class CompoundLinearModel(LinearModel):
         return self._explanatory_variables[0]
 
     def get_model_dataset(self):
-        """
+        """Returns a pandas DataFrame containing the following columns:
+
+            Date and time of observation
+            Observed response variable
+            Observed explanatory variables
+            Missing and excluded observation indicators
+            Fitted transformed response variable
+            Raw residual
+            Estimated response variable, with Duan smearing estimate applied
+            Normal quantile
+            Standardized (internally studentized) residual
+            Leverage
+            Cook's distance
+            DFFITS
 
         :return:
         """
@@ -1917,7 +1943,7 @@ class CompoundLinearModel(LinearModel):
         return model_dataset
 
     def get_model_formula(self, segment=None):
-        """
+        """Return the formula of the model
 
         :param segment:
         :return:
@@ -1939,7 +1965,12 @@ class CompoundLinearModel(LinearModel):
         return model_formula
 
     def get_model_report(self):
-        """
+        """Get a report for the model. The report contains
+            a summary of the model,
+            the parameter variance-covariance matrix,
+            model variable summary statistics,
+            the origin files for the data, and
+            a summary of the model dataset.
 
         :return:
         """
@@ -1971,7 +2002,7 @@ class CompoundLinearModel(LinearModel):
         return model_report
 
     def get_model_summary(self):
-        """
+        """Get summary statistics for the model.
 
         :return:
         """
@@ -2003,7 +2034,7 @@ class CompoundLinearModel(LinearModel):
         return summary
 
     def get_number_of_segments(self):
-        """
+        """Return the number of segments in the model
 
         :return:
         """
@@ -2012,6 +2043,17 @@ class CompoundLinearModel(LinearModel):
 
     def plot(self, plot_type='variable_scatter', ax=None):
         """
+
+        Plot types:
+            model_scatter
+            variable_scatter
+            resid_vs_fitted
+            resid_vs_time
+            resid_qq
+            serial_correlation
+            model_pred_vs_obs
+            pred_vs_obs
+
 
         :param plot_type:
         :param ax:
@@ -2031,7 +2073,7 @@ class CompoundLinearModel(LinearModel):
             self._model[i].plot(ax=ax, plot_type=plot_type, add_legend=add_legend)
 
     def remove_breakpoint(self, breakpoint):
-        """
+        """Removed the specified breakpoint
 
         :param breakpoint:
         :return:
@@ -2050,7 +2092,7 @@ class CompoundLinearModel(LinearModel):
         self._create_model()
 
     def remove_explanatory_var_transform(self, transform, segment=None):
-        """
+        """Remove the specified explanatory variable transformation
 
         :param segment:
         :param transform:
@@ -2067,7 +2109,7 @@ class CompoundLinearModel(LinearModel):
                 segment_model.remove_explanatory_var_transform(transform)
 
     def reset_breakpoints(self):
-        """
+        """Reset the breakpoints in the model to -inf and +inf
 
         :return:
         """
@@ -2079,7 +2121,7 @@ class CompoundLinearModel(LinearModel):
         self._create_model()
 
     def reset_explanatory_var_transform(self, segment=None):
-        """
+        """Remove all transformations of explanatory variables
 
         :param segment:
         :return:
@@ -2097,7 +2139,7 @@ class CompoundLinearModel(LinearModel):
                 segment_model.reset_explanatory_var_transform()
 
     def set_explanatory_variable(self, explanatory_variable):
-        """
+        """Set the explanatory variable for the model
 
         :param explanatory_variable:
         :return:
@@ -2109,7 +2151,7 @@ class CompoundLinearModel(LinearModel):
         self._update_model()
 
     def predict_response_variable(self, **kwargs):
-        """
+        """Predict the response variable using the current model
 
         :param explanatory_data:
         :param bias_correction:
