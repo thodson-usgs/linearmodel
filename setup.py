@@ -14,5 +14,5 @@ setup(
         'Intended Audience :: Developers',
         'Programming Language :: Python 3.6'
     ],
-    python_requires='>=3'
+    python_requires='>=3', requires=['matplotlib', 'pyqt=>5.6', 'numpy', 'pandas', 'statsmodels', 'scipy']
 )
