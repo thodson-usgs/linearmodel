@@ -29,6 +29,8 @@ class ModelPlotCanvas(FigureCanvas):
         FigureCanvas.__init__(self, fig)
         self.setParent(parent)
 
+        self._text = None
+
         fig.canvas.mpl_connect('button_press_event', self._on_click)
         fig.canvas.mpl_connect('pick_event', self._on_pick)
 
@@ -36,6 +38,14 @@ class ModelPlotCanvas(FigureCanvas):
                                    QtWidgets.QSizePolicy.Expanding,
                                    QtWidgets.QSizePolicy.Expanding)
         FigureCanvas.updateGeometry(self)
+
+    def _clear_axes_text(self):
+
+        if self._text is not None:
+            try:
+                self._text.remove()
+            except ValueError:
+                pass
 
     def _clear_highlighted_point(self):
 
@@ -57,6 +67,8 @@ class ModelPlotCanvas(FigureCanvas):
         return model_data.ix[x_index & y_index, 'Obs. number'].values
 
     def _on_click(self, event):
+
+        self._clear_axes_text()
 
         if self._point_selected:
 
@@ -90,6 +102,8 @@ class ModelPlotCanvas(FigureCanvas):
         else:
 
             self._clear_highlighted_point()
+
+        self._axes.figure.canvas.draw()
 
     def _on_pick(self, event):
         """
@@ -132,16 +146,19 @@ class ModelPlotCanvas(FigureCanvas):
 
         observation_number = self._observation_numbers[data_index]
 
-        explanatory_variable = self._rating_model.get_explanatory_variables()[0]
+        try:
+            explanatory_variable = self._rating_model.get_explanatory_variables()[0]
+        except AttributeError:
+            explanatory_variable = self._rating_model.get_explanatory_variable()
         response_variable = self._rating_model.get_response_variable()
 
-        point_info = "Obs. #: {0}, {1}: {2:.5g}, {3}: {4:.5g}".format(observation_number,
+        point_info = "Obs. #: {0}\n{1}: {2:.5g}\n{3}: {4:.5g}".format(observation_number,
                                                                       explanatory_variable,
                                                                       x_data[data_index],
                                                                       response_variable,
                                                                       y_data[data_index])
 
-        print(point_info)
+        self._text = self._axes.text(0.65, 0.10, point_info, transform=self._axes.transAxes)
 
 
 class ModelPlotWindow(QtWidgets.QMainWindow):
@@ -164,9 +181,9 @@ class ModelPlotWindow(QtWidgets.QMainWindow):
 
         self.main_widget = QtWidgets.QWidget(self)
 
-        l = QtWidgets.QVBoxLayout(self.main_widget)
+        layout = QtWidgets.QVBoxLayout(self.main_widget)
         rm_plot_canvas = ModelPlotCanvas(rating_model)
-        l.addWidget(rm_plot_canvas)
+        layout.addWidget(rm_plot_canvas)
 
         self.main_widget.setFocus()
         self.setCentralWidget(self.main_widget)
