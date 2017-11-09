@@ -354,9 +354,12 @@ class DataManager:
 
             # match the nearest-in-time observation
             if match_method == 'nearest':
-                nearest_index = variable.index.get_loc(time, method='nearest', tolerance=time_diff)
-                nearest_observation = variable.ix[nearest_index]
-                variable_observation = nearest_observation.as_matrix()[0]
+                try:
+                    nearest_index = variable.index.get_loc(time, method='nearest', tolerance=time_diff)
+                    nearest_observation = variable.ix[nearest_index]
+                    variable_observation = nearest_observation.as_matrix()[0]
+                except KeyError:
+                    variable_observation = np.nan
 
             # get the mean observation
             elif match_method == 'mean':
