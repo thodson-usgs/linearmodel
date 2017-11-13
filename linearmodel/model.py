@@ -1541,15 +1541,7 @@ class MultipleOLSModel(OLSModel):
 
         if self._response_variable and self._explanatory_variables[0]:
 
-            response_var_transform = self._variable_transform[self._response_variable]
-            model_response_var = self.get_variable_transform_name(self._response_variable, response_var_transform)
-
-            explanatory_vars_transform = []
-            for variable in self._explanatory_variables:
-                explan_transform = self._variable_transform[variable]
-                explanatory_vars_transform.append(self.get_variable_transform_name(variable, explan_transform))
-
-            model_formula = model_response_var + ' ~ ' + ' + '.join(explanatory_vars_transform)
+            model_formula = self._response_variable + ' ~ ' + ' + '.join(self._explanatory_variables)
 
         else:
 
@@ -1618,11 +1610,20 @@ class MultipleOLSModel(OLSModel):
         :return:
         """
 
-        self._check_variable_names(variables)
+        base_variable_names = []
+
+        for variable in variables:
+
+            variable_transform, raw_variable = self._find_raw_variable(variable)
+            base_variable_names.append(raw_variable)
+            self.check_transform(variable_transform)
+
+        self._check_variable_names(base_variable_names)
 
         self._explanatory_variables = tuple(variables)
 
-        self._update_model()
+        if self._is_init:
+            self._update_model()
 
 
 class ComplexOLSModel(OLSModel):
