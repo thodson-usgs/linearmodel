@@ -312,8 +312,6 @@ class DataManager:
 
         self._check_variable_name(variable_name)
 
-        # return pd.DataFrame(self._data.ix[:, variable_name]).dropna()
-
         return pd.DataFrame(self._data.ix[:, variable_name])
 
     def get_variable_names(self):
@@ -335,7 +333,6 @@ class DataManager:
 
         self._check_variable_name(variable_name)
 
-        # if the default values, use superclass behavior
         if time_window_width == 0 and match_method == 'nearest':
             try:
                 variable_observation = self._data.ix[time, variable_name]
@@ -347,7 +344,7 @@ class DataManager:
 
         else:
 
-            variable = self.get_variable(variable_name)
+            variable = self.get_variable(variable_name).dropna()
 
             # get the subset of times with the variable
             time_diff = timedelta(minutes=time_window_width / 2.)
