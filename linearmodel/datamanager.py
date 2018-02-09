@@ -183,7 +183,24 @@ class DataManager:
 
         return tab_delimited_df
 
-    def add_data(self, other, keep_curr_obs=None):
+    def add_data(self, data_df, origin=None):
+        """Add data from a DataFrame
+
+        :param data_df: DataFrame containing observations to add
+        :param origin: Origin information for the variables contained in data_df
+        :return: None
+        """
+
+        if origin is None:
+            data_origin = self._create_empty_origin(data_df)
+        else:
+            data_origin = self.create_data_origin(data_df, origin)
+
+        other_data_manager = type(self)(data_df, data_origin)
+
+        return self.add_data_manager(other_data_manager)
+
+    def add_data_manager(self, other, keep_curr_obs=None):
         """Add data from other DataManager subclass.
 
         This method adds the data and data origin information from other DataManager objects. An exception will be
@@ -252,15 +269,22 @@ class DataManager:
 
     @staticmethod
     def create_data_origin(data_df, data_path):
-        """
+        """Create an origin DataFrame
 
-        :param data_df: 
-        :param data_path: 
+        :param data_df: DataFrame containing variables
+        :param data_path: String or list containing origin information for the variables in the data_df
         :return: 
         """
 
-        acoustic_variables = list(data_df)
-        data = [[variable, data_path] for variable in acoustic_variables]
+        variables = list(data_df)
+
+        if isinstance(data_path, str):
+            data_path = [data_path]
+
+        data = []
+        for path in data_path:
+            data.extend([[variable_name, path] for variable_name in variables])
+
         data_origin = pd.DataFrame(data=data, columns=['variable', 'origin'])
         return data_origin
 
@@ -401,7 +425,7 @@ class DataManager:
 
         # initialize data for a DataManager
         matched_data = pd.DataFrame(index=self._data.index)
-        surrogate_variable_origin_data = []
+        variable_origin_data = []
 
         if variable_name is None:
             variable_names = other.get_variable_names()
@@ -424,17 +448,17 @@ class DataManager:
 
             # add the origins of the variable to the origin data list
             for origin in other.get_variable_origin(variable):
-                surrogate_variable_origin_data.append([variable, origin])
+                variable_origin_data.append([variable, origin])
 
             # add the matched variable series to the dataframe
             matched_data[variable] = variable_series
 
         # create a data manager
-        surrogate_variable_origin = pd.DataFrame(data=surrogate_variable_origin_data, columns=['variable', 'origin'])
+        surrogate_variable_origin = pd.DataFrame(data=variable_origin_data, columns=['variable', 'origin'])
         matched_surrogate_data_manager = DataManager(matched_data, surrogate_variable_origin)
 
         # add the matched surrogate data manager to the constituent data manager
-        return self.add_data(matched_surrogate_data_manager)
+        return self.add_data_manager(matched_surrogate_data_manager)
 
     @classmethod
     def read_tab_delimited_data(cls, file_path):
