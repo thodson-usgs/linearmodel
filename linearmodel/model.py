@@ -1244,7 +1244,11 @@ class OLSModel(LinearModel, abc.ABC):
             predicted_data = np.squeeze(response_data, axis=1)
 
         predicted = pd.DataFrame(data=predicted_data, index=explanatory_df.index, columns=columns)
-        predicted = predicted.join(explanatory_df[list(self._explanatory_variables)], how='outer')
+
+        raw_explanatory_variables = [raw_variable for _, raw_variable in
+                                     [self._find_raw_variable(expln_var) for expln_var in self._explanatory_variables]]
+
+        predicted = predicted.join(explanatory_df[raw_explanatory_variables], how='outer')
 
         return predicted
 
@@ -1275,15 +1279,15 @@ class SimpleOLSModel(OLSModel):
         """
 
         explanatory_variable = self.get_explanatory_variable()
+        explanatory_transform, raw_explanatory_variable = self._find_raw_variable(explanatory_variable)
 
-        assert (explanatory_variable in exogenous_df.keys())
+        assert (raw_explanatory_variable in exogenous_df.keys())
 
         exog = pd.DataFrame()
 
-        explanatory_transform = self._variable_transform[explanatory_variable]
-        transformed_variable_name = self.get_variable_transform_name(explanatory_variable, explanatory_transform)
         transform_function = self._transform_functions[explanatory_transform]
-        exog[transformed_variable_name] = transform_function(exogenous_df[explanatory_variable])
+        exog[explanatory_variable] = transform_function(exogenous_df[raw_explanatory_variable])
+
         exog = sm.add_constant(exog)
 
         return exog
