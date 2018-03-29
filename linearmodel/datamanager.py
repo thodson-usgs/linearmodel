@@ -142,7 +142,7 @@ class DataManager:
         :return: 
         """
 
-        origin = cls.create_data_origin(data, np.NaN)
+        origin = cls.create_data_origin(data, [np.NaN])
 
         return origin
 
