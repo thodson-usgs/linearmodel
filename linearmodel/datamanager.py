@@ -315,7 +315,11 @@ class DataManager:
 
         :return: Copy of the data being managed in a DataFrame
         """
-        return self._data.copy(deep=True)
+
+        data_columns = list(self._data.columns)
+        data_columns.sort()
+
+        return self._data[data_columns]
 
     def get_origin(self):
         """Return a DataFrame containing the variable origins.
