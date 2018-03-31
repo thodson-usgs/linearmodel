@@ -52,6 +52,7 @@ class DataManager:
         self._check_origin(data, data_origin)
 
         self._data = data.copy(deep=True)
+        self._data.index.name = 'DateTime'
         self._data_origin = data_origin.copy(deep=True)
 
     def __deepcopy__(self, memo):
