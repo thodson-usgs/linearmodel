@@ -52,6 +52,7 @@ class DataManager:
         self._check_origin(data, data_origin)
 
         self._data = data.copy(deep=True)
+        self._data.index.name = 'DateTime'
         self._data_origin = data_origin.copy(deep=True)
 
     def __deepcopy__(self, memo):
@@ -325,7 +326,11 @@ class DataManager:
         :type time_index: pandas.DateTimeIndex
         :return:
         """
-        return self._data.copy(deep=True)
+
+        data_columns = list(self._data.columns)
+        data_columns.sort()
+
+        return self._data[data_columns]
 
     def get_origin(self):
         """Return a DataFrame containing the variable origins.

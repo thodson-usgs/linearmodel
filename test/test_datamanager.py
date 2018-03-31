@@ -15,6 +15,7 @@ class TestDataManager(unittest.TestCase):
 
         data = np.random.normal(size=data_size)
         data_df = pd.DataFrame(data=data, columns=variable_names)
+        data_df.index.name = 'DateTime'
 
         return data_df
 
@@ -28,8 +29,8 @@ class TestDataManager(unittest.TestCase):
         data_manager_with_origin = DataManager(data_df, origin_df)
 
         # test that data is being stored correctly
-        self.assertTrue(np.all(data_manager_with_origin.get_data() == data_df))
-        self.assertTrue(np.all(data_manager_with_origin.get_origin() == origin_df))
+        pd.testing.assert_frame_equal(data_manager_with_origin.get_data(), data_df)
+        pd.testing.assert_frame_equal(data_manager_with_origin.get_origin(), origin_df)
 
         # test that DataFrames aren't the same instance
         self.assertFalse(data_manager_with_origin.get_data() is data_df)
@@ -45,9 +46,8 @@ class TestDataManager(unittest.TestCase):
         data_manager_without_origin = DataManager(data_df)
 
         # test that data is being stored correctly
-        self.assertTrue(np.all(data_manager_without_origin.get_data() == data_df))
-        self.assertTrue(np.all(data_manager_without_origin.get_origin()['variable'] == nan_origin_df['variable']))
-        self.assertTrue(data_manager_without_origin.get_origin()['origin'].isnull().all())
+        pd.testing.assert_frame_equal(data_manager_without_origin.get_data(), data_df)
+        pd.testing.assert_frame_equal(data_manager_without_origin.get_origin(), nan_origin_df)
 
         # test that DataFrames aren't the same instance
         self.assertFalse(data_manager_without_origin.get_data() is data_df)
