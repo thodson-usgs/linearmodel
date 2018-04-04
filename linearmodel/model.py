@@ -1455,7 +1455,11 @@ class MultipleOLSModel(OLSModel):
         if explanatory_variables:
             self.set_explanatory_variables(explanatory_variables)
         else:
+            #XXX why does this call skip the first variable? Are you assuming
+            #the first variable is the explanatory? Is that
+            #guarenteed by functions setting the variable order?
             self.set_explanatory_variables(data_manager.get_variable_names()[1:])
+
 
     def _estimate_explanatory_variable(self, explanatory_variable):
         """
@@ -1521,20 +1525,26 @@ class MultipleOLSModel(OLSModel):
         :param exogenous_df:
         :return:
         """
-
-        for variable in self._explanatory_variables:
-            assert (variable in exogenous_df.keys())
-
         exog = pd.DataFrame()
 
-        for variable in self._explanatory_variables:
-            transform = self._variable_transform[variable]
-            transform_function = self._transform_functions[transform]
-            transformed_variable_name = self.get_variable_transform_name(variable, transform)
-            exog[transformed_variable_name] = transform_function(exogenous_df[variable])
+        explanatory_variables = self._explanatory_variables
+        raw_explanatory_variables = []
+
+        for variable in explanatory_variables:
+            explanatory_transform, raw_explanatory_variable = self._find_raw_variable(variable)
+            assert (raw_explanatory_variable in exogenous_df.keys())
+
+            #if raw variable transfer without transformation
+            if not explanatory_transform:
+                exog[variable] = exogenous_df[variable]
+                continue
+
+            #otherwise transform the variable and append it to exog
+            transform_function = self._transform_functions[explanatory_transform]
+            transformed_variable_name = variable
+            exog[variable] = transform_function(exogenous_df[raw_explanatory_variable])
 
         exog = sm.add_constant(exog)
-
         return exog
 
     def get_model_formula(self):
@@ -1623,7 +1633,6 @@ class MultipleOLSModel(OLSModel):
             self.check_transform(variable_transform)
 
         self._check_variable_names(base_variable_names)
-
         self._explanatory_variables = tuple(variables)
 
         if self._is_init:
