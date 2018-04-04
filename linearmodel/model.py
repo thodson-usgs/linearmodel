@@ -1455,9 +1455,6 @@ class MultipleOLSModel(OLSModel):
         if explanatory_variables:
             self.set_explanatory_variables(explanatory_variables)
         else:
-            #XXX why does this call skip the first variable? Are you assuming
-            #the first variable is the explanatory? Is that
-            #guarenteed by functions setting the variable order?
             self.set_explanatory_variables(data_manager.get_variable_names()[1:])
 
 
