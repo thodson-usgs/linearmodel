@@ -1029,6 +1029,16 @@ class OLSModel(LinearModel, abc.ABC):
     def get_model_formula(self):
         pass
 
+    def get_model_params(self):
+        """Returns the parameters estimated by the model. For example, intercept and slope terms.
+
+        :return: Estimated parameters as an array
+        """
+
+        results = self._model.fit()
+        model_params = np.expand_dims(results.params.as_matrix(), 1)
+        return model_params
+
     def get_model_report(self):
         """Get a report for the model. The report contains
             a summary of the model,
