@@ -341,7 +341,7 @@ class DataManager:
 
         self._check_variable_name(variable_name)
 
-        return pd.DataFrame(self._data.ix[:, variable_name])
+        return pd.DataFrame(self._data.loc[:, variable_name])
 
     def get_variable_names(self):
         """Return a list of variable names.
