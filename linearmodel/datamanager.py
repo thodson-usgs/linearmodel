@@ -317,10 +317,9 @@ class DataManager:
         :return: Copy of the data being managed in a DataFrame
         """
 
-        data_columns = list(self._data.columns)
-        data_columns.sort()
+        variable_names = self.get_variable_names()
 
-        return self._data[data_columns]
+        return self._data[variable_names]
 
     def get_origin(self):
         """Return a DataFrame containing the variable origins.
@@ -349,6 +348,9 @@ class DataManager:
 
         :return: List of variable names.
         """
+        data_columns = list(self._data.columns)
+        data_columns.sort()
+
         return list(self._data.keys())
 
     def get_variable_observation(self, variable_name, time, time_window_width=0, match_method='nearest'):
