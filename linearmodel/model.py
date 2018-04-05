@@ -1558,16 +1558,18 @@ class MultipleOLSModel(OLSModel):
         :return:
         """
 
-        for variable in self._explanatory_variables:
-            assert (variable in exogenous_df.keys())
+        # self._explanatory variables stores transformed variable names.
+        # find the raw variables and the corresponding transform
+        explanatory_transform = {raw_variable: transform for transform, raw_variable in
+                                 [self._find_raw_variable(var) for var in self._explanatory_variables]}
 
+        # create an exogenous DataFrame containing the transformed variables
         exog = pd.DataFrame()
-
-        for variable in self._explanatory_variables:
-            transform = self._variable_transform[variable]
+        for raw_variable, transform in explanatory_transform.items():
+            assert (raw_variable in exogenous_df.keys())
             transform_function = self._transform_functions[transform]
-            transformed_variable_name = self.get_variable_transform_name(variable, transform)
-            exog[transformed_variable_name] = transform_function(exogenous_df[variable])
+            transformed_variable_name = self.get_variable_transform_name(raw_variable, transform)
+            exog[transformed_variable_name] = transform_function(exogenous_df[raw_variable])
 
         exog = sm.add_constant(exog)
 
