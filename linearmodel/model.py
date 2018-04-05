@@ -19,6 +19,74 @@ from linearmodel import datamanager
 from linearmodel import stats as saidstats
 
 
+TRANSFORM_VARIABLE_TEMPLATES = {None: 'x',
+                                'log': 'log(x)',
+                                'log10': 'log10(x)',
+                                'pow2': 'power(x, 2)',
+                                'sqrt': 'sqrt(x)'
+                                }
+TRANSFORM_FUNCTIONS = {None: lambda x: x,
+                       'log': log,
+                       'log10': log10,
+                       'pow2': lambda x: power(x, 2),
+                       'sqrt': lambda x: sqrt(x)
+                       }
+INVERSE_TRANSFORM_FUNCTIONS = {None: lambda x: x,
+                               'log': np.exp,
+                               'log10': lambda x: power(10, x),
+                               'pow2': lambda x: power(x, 1 / 2),
+                               'sqrt': lambda x: power(x, 2)
+                               }
+FLOAT_STRING_FORMAT = '{:.5g}'
+
+
+# TODO: Refactor classes to use find_raw_variable() and get_exog_df()
+def find_raw_variable(variable_name):
+    """Find the transform and raw variable given a variable name.
+
+    :param variable_name:
+    :return: variable_transform, raw_variable
+    """
+    raw_variable = variable_name
+    variable_transform = None
+
+    for transform, template in TRANSFORM_VARIABLE_TEMPLATES.items():
+        if transform:
+            pattern = '^' + re.escape(template).replace('x', '(.+?)') + '$'
+            m = re.search(pattern, variable_name)
+            if m:
+                raw_variable = m.group(1)
+                variable_transform = transform
+                break
+
+    return variable_transform, raw_variable
+
+
+def get_exog_df(explanatory_df, explanatory_variables):
+    """Create an exogenous DataFrame.
+
+    Returns a DataFrame containing exogenous data based on explanatory_variables.
+
+    :param explanatory_df:
+    :param explanatory_variables:
+    :return:
+    """
+
+    number_of_observations = explanatory_df.shape[0]
+    intercept_data = np.ones((number_of_observations, 1))
+    intercept_column = ['Intercept']
+    exog_df = pd.DataFrame(data=intercept_data, columns=intercept_column)
+
+    for variable_name in explanatory_variables:
+        variable_transform, raw_variable = find_raw_variable(variable_name)
+        transform_function = TRANSFORM_FUNCTIONS[variable_transform]
+        exog_df[variable_name] = transform_function(explanatory_df[raw_variable])
+
+    ordered_exog_variables = intercept_column + explanatory_variables
+
+    return exog_df[ordered_exog_variables]
+
+
 class ModelException(Exception):
     """Exception base class for the model.py module."""
     pass
