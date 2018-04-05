@@ -152,12 +152,13 @@ class LinearModel(abc.ABC):
 
         self._model_data_origin = pd.DataFrame(data=origin_data, columns=['variable', 'origin'])
 
-    def _find_raw_variable(self, variable_name):
+    @classmethod
+    def _find_raw_variable(cls, variable_name):
 
         raw_variable = variable_name
         variable_transform = None
 
-        for transform, template in self._transform_variable_templates.items():
+        for transform, template in cls._transform_variable_templates.items():
             if transform:
                 pattern = '^' + re.escape(template).replace('x', '(.+?)') + '$'
                 m = re.search(pattern, variable_name)
@@ -1452,20 +1453,45 @@ class MultipleOLSModel(OLSModel):
     """"""
 
     def __init__(self, data_manager, response_variable=None, explanatory_variables=None):
-        """
+        """Initialize a MultipleOLSModel instance.
+
+        If a response_variable is not specified, the first variable in data_manager will be used as a response variable.
+
+        explanatory_variables is a list of variables in data_manager to be used as explanatory variables in the model.
+        If explanatory_variables is not specified, the variables in data_manager that aren't used as the response
+        variable are used.
 
         :param data_manager:
+        :type data_manager: DataManager
         :param response_variable:
         :param explanatory_variables:
         :return:
         """
 
+        variable_names = data_manager.get_variable_names()
+
+        # if the response and explanatory variables aren't specified, set the response to the first in the list of
+        # variables and the explanatory variables to the remaining variables
+        if response_variable is None and explanatory_variables is None:
+            response_variable = variable_names[0]
+            explanatory_variables = variable_names[1:]
+
+        # if the response variable isn't specified and the explanatory variables are, set the response variable to the
+        # first variable not in the explanatory variables
+        elif response_variable is None and explanatory_variables is not None:
+            # raw_explanatory_variables = [raw_variable for _, raw_variable in ]
+            possible_response_variables = [var for var in variable_names if var not in explanatory_variables]
+            response_variable = possible_response_variables[0]
+
+        # if the response variable is specified and the explanatory variables aren't, set the explanatory variables to
+        # the variables that aren't the response variable
+        elif response_variable is not None and explanatory_variables is None:
+            _, raw_response_variable = self._find_raw_variable(response_variable)
+            explanatory_variables = [var for var in variable_names if var != raw_response_variable]
+
         super().__init__(data_manager, response_variable)
 
-        if explanatory_variables:
-            self.set_explanatory_variables(explanatory_variables)
-        else:
-            self.set_explanatory_variables(data_manager.get_variable_names()[1:])
+        self.set_explanatory_variables(explanatory_variables)
 
     def _estimate_explanatory_variable(self, explanatory_variable):
         """
