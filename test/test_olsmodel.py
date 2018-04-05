@@ -1,3 +1,5 @@
+import os
+import sys
 import unittest
 
 import numpy as np
@@ -6,6 +8,10 @@ import pandas as pd
 from linearmodel.datamanager import DataManager
 from linearmodel.model import MultipleOLSModel
 from linearmodel.stats import ols_parameter_estimate
+
+current_path = os.path.dirname(os.path.realpath(__file__))
+
+model_path = os.path.join(current_path, 'data', 'model')
 
 
 def create_data_set(p=2, n=50, response_transform=None, explanatory_transform=None):
@@ -113,162 +119,124 @@ def estimate_parameters(dm, response_variable='y', explanatory_variables=None,
 class TestMultipleOLSModelInit(unittest.TestCase):
     """Test the initialization of the MultipleOLSModel class"""
 
+    def _save_test_case_model_data(self, model_dataset):
+
+        test_case_name = sys._getframe(1).f_code.co_name
+
+        # find the test case data file path
+        test_case_file_name = test_case_name + ".txt"
+        test_data_path = os.path.join(model_path, self.__class__.__name__)
+        test_case_file_path = os.path.join(test_data_path, test_case_file_name)
+
+        model_dataset.to_csv(test_case_file_path, sep='\t')
+
+    def _test_model_init(self, test_case_parameters):
+
+        # print(sys._getframe(1).f_code.co_name)
+        test_case_name = sys._getframe(1).f_code.co_name
+
+        # find the test case data file path
+        test_case_file_name = test_case_name + ".txt"
+        test_data_path = os.path.join(model_path, self.__class__.__name__)
+        test_case_file_path = os.path.join(test_data_path, test_case_file_name)
+
+        # read the test case data and get the fitted values
+        test_case_df = pd.read_table(test_case_file_path, dtype=np.float64)
+        fitted_df = test_case_df.filter(regex='Fitted *')
+
+        # drop the fitted values and create a data set to pass to the LinearModel
+        data_set_df = test_case_df.drop(fitted_df.keys(), axis=1)
+        data_set = DataManager(data_set_df)
+
+        # initialize a model without specifying the response and explanatory variables
+        response_variable = test_case_parameters['response_variable']
+        explanatory_variables = test_case_parameters['explanatory_variables']
+        model = MultipleOLSModel(data_set, response_variable=response_variable,
+                                 explanatory_variables=explanatory_variables)
+
+        # test the model form
+        self.assertEqual(model.get_model_formula(), test_case_parameters['model_form'])
+
+        model_dataset = model.get_model_dataset()
+        fitted_results = model_dataset[fitted_df.keys()]
+        pd.testing.assert_frame_equal(fitted_results, fitted_df)
+
     def test_model_init(self):
         """Test the successful initialization of a MultipleOLSModel instance"""
 
-        data_set = create_data_set(p=3)
+        test_case_parameters = {'response_variable': None,
+                                'explanatory_variables': None,
+                                'model_form': 'y ~ x1 + x2'}
 
-        # initialize a model without specifying the response and explanatory variables
-        model = MultipleOLSModel(data_set)
-
-        # test the model form
-        self.assertEqual(model.get_model_formula(), 'y ~ x1 + x2')
-
-        # test the parameters estimated by the model
-        model_params = model.get_model_params()
-        expected_parameters = estimate_parameters(data_set)
-        param_is_close = np.isclose(model_params, expected_parameters)
-        self.assertTrue(np.all(param_is_close))
+        self._test_model_init(test_case_parameters)
 
     def test_model_init_specify_explanatory(self):
         """Test the initialization of a MultipleOLSModel instance when explanatory variables are specified and a
         response variable isn't
         """
 
-        data_set = create_data_set(p=3)
+        test_case_parameters = {'response_variable': None,
+                                'explanatory_variables': ['y', 'x1'],
+                                'model_form': 'x2 ~ y + x1'}
 
-        explanatory_variables = ['y', 'x1']
-        model = MultipleOLSModel(data_set, explanatory_variables=explanatory_variables)
-
-        # test the model form
-        self.assertEqual(model.get_model_formula(), 'x2 ~ y + x1')
-
-        # test the parameters estimated by the model
-        model_params = model.get_model_params()
-        expected_parameters = estimate_parameters(data_set, response_variable='x2')
-        param_is_close = np.isclose(model_params, expected_parameters)
-        self.assertTrue(np.all(param_is_close))
+        self._test_model_init(test_case_parameters)
 
     def test_model_init_specify_response(self):
         """Test the initialization of a MultipleOLSModel instance when a response variable is specified and
         explanatory variables aren't
         """
 
-        data_set = create_data_set(p=3)
-
-        response_variable = 'x1'
-        model = MultipleOLSModel(data_set, response_variable=response_variable)
-
-        # test the model form
-        self.assertEqual(model.get_model_formula(), 'x1 ~ y + x2')
-
-        # test the parameters estimated by the model
-        model_params = model.get_model_params()
-        expected_parameters = estimate_parameters(data_set, response_variable=response_variable)
-        param_is_close = np.isclose(model_params, expected_parameters)
-        self.assertTrue(np.all(param_is_close))
+        test_case_parameters = {'response_variable': 'x1',
+                                'explanatory_variables': None,
+                                'model_form': 'x1 ~ y + x2'}
+        self._test_model_init(test_case_parameters)
 
     def test_model_init_specify_response_and_explanatory(self):
         """Test the initialization of a MultipleOLSModel instance when explanatory and response variables are specified
         """
 
-        # get a data set with 3 explanatory variables but only specify two
-        data_set = create_data_set(p=4)
-
-        response_variale = 'y'
-        explanatory_variables = ['x1', 'x3']
-        model = MultipleOLSModel(data_set, response_variable=response_variale,
-                                 explanatory_variables=explanatory_variables)
-
-        # test the model form
-        self.assertEqual(model.get_model_formula(), 'y ~ x1 + x3')
-
-        # test the parameters estimated by the model
-        model_params = model.get_model_params()
-        expected_parameters = estimate_parameters(data_set, response_variable=response_variale,
-                                                  explanatory_variables=explanatory_variables)
-        param_is_close = np.isclose(model_params, expected_parameters)
-        self.assertTrue(np.all(param_is_close))
+        test_case_parameters = {'response_variable': 'y',
+                                'explanatory_variables': ['x1', 'x3'],
+                                'model_form': 'y ~ x1 + x3'}
+        self._test_model_init(test_case_parameters)
 
     def test_model_init_specify_transformed_response(self):
         """Test the initialization of a MultipleOLSModel instance when specifying a transformed response variable."""
 
-        data_set = create_data_set(p=3, response_transform='log10')
-
-        response_variable = 'log10(y)'
-        model = MultipleOLSModel(data_set, response_variable=response_variable)
-
-        # test the model form
-        self.assertEqual(model.get_model_formula(), 'log10(y) ~ x1 + x2')
-
-        # test the parameters estimated by the model
-        model_params = model.get_model_params()
-        expected_parameters = estimate_parameters(data_set, response_transform='log10')
-        param_is_close = np.isclose(model_params, expected_parameters)
-        self.assertTrue(np.all(param_is_close))
+        test_case_parameters = {'response_variable': 'log10(y)',
+                                'explanatory_variables': None,
+                                'model_form': 'log10(y) ~ x1 + x2'}
+        self._test_model_init(test_case_parameters)
 
     def test_model_init_specify_one_transformed_explanatory(self):
         """Test the initialization of a MultipleOLSModel instance when specifying one transformed explanatory
         variable.
         """
 
-        explanatory_transform = {0: 'log10'}
-        data_set = create_data_set(p=3, explanatory_transform=explanatory_transform)
-        explanatory_variables = ['log10(x1)', 'x2']
-        model = MultipleOLSModel(data_set, explanatory_variables=explanatory_variables)
-
-        # test the model form
-        self.assertEqual(model.get_model_formula(), 'y ~ log10(x1) + x2')
-
-        # test the parameters estimated by the model
-        model_params = model.get_model_params()
-        expected_parameters = estimate_parameters(data_set, explanatory_transform=explanatory_transform)
-        param_is_close = np.isclose(model_params, expected_parameters)
-        self.assertTrue(np.all(param_is_close))
+        test_case_parameters = {'response_variable': None,
+                                'explanatory_variables': ['log10(x1)', 'x2'],
+                                'model_form': 'y ~ log10(x1) + x2'}
+        self._test_model_init(test_case_parameters)
 
     def test_model_init_specify_all_transformed_explanatory(self):
         """Test the initialization of a MultipleOLSModel instance when specifying two (all) transformed explanatory
         variables.
         """
 
-        explanatory_transform = {0: 'log10', 1: 'log10'}
-        data_set = create_data_set(p=3, explanatory_transform=explanatory_transform)
-        explanatory_variables = ['log10(x1)', 'log10(x2)']
-        model = MultipleOLSModel(data_set, explanatory_variables=explanatory_variables)
-
-        # test the model form
-        self.assertEqual(model.get_model_formula(), 'y ~ log10(x1) + log10(x2)')
-
-        # test the parameters estimated by the model
-        model_params = model.get_model_params()
-        expected_parameters = estimate_parameters(data_set, explanatory_transform=explanatory_transform)
-        param_is_close = np.isclose(model_params, expected_parameters)
-        self.assertTrue(np.all(param_is_close))
+        test_case_parameters = {'response_variable': None,
+                                'explanatory_variables': ['log10(x1)', 'log10(x2)'],
+                                'model_form': 'y ~ log10(x1) + log10(x2)'}
+        self._test_model_init(test_case_parameters)
 
     def test_model_init_specify_transformed_response_and_explanatory(self):
         """Test the initialization of a MultipleOLSModel instance when specifying transformed response and explanatory
         variables.
         """
 
-        response_transform = 'log10'
-        explanatory_transform = {0: 'log10', 1: 'log10'}
-        data_set = create_data_set(p=3, response_transform=response_transform,
-                                   explanatory_transform=explanatory_transform)
-
-        response_variable = 'log10(y)'
-        explanatory_variables = ['log10(x1)', 'log10(x2)']
-        model = MultipleOLSModel(data_set, response_variable=response_variable,
-                                 explanatory_variables=explanatory_variables)
-
-        # test the model form
-        self.assertEqual(model.get_model_formula(), 'log10(y) ~ log10(x1) + log10(x2)')
-
-        # test the parameters estimated by the model
-        model_params = model.get_model_params()
-        expected_parameters = estimate_parameters(data_set, response_transform=response_transform,
-                                                  explanatory_transform=explanatory_transform)
-        param_is_close = np.isclose(model_params, expected_parameters)
-        self.assertTrue(np.all(param_is_close))
+        test_case_parameters = {'response_variable': 'log10(y)',
+                                'explanatory_variables': ['log10(x1)', 'log10(x2)'],
+                                'model_form': 'log10(y) ~ log10(x1) + log10(x2)'}
+        self._test_model_init(test_case_parameters)
 
 
 if __name__ == '__main__':
