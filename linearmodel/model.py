@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import statsmodels.formula.api as smf
 from numpy import log, log10, power, sqrt
+from pandas.plotting import scatter_matrix
 from scipy import stats
 from statsmodels import api as sm
 from statsmodels.iolib.summary import Summary
@@ -970,6 +971,37 @@ class OLSModel(LinearModel, abc.ABC):
 
         plt.sca(ax)
         plt.axhline(color='black', ls='--')
+
+    def _plot_scatter_matrix(self, alpha=0.5, figsize=None, ax=None,
+                             diagonal='kde', pretty=True):
+        """Make a scatter plot matrix among the variables
+
+        See pandas.plotting.scatter_matrix for parameter information
+
+        :param ax:
+        :param alpha:
+        :param figsize:
+        :param diagonal:
+        """
+
+        explanatory_df = self._model_dataset
+        response_variable = self.get_response_variable()
+        response_df  = explanatory_df[[response_variable]]
+        exogenous_df = self._get_exogenous_matrix(explanatory_df)
+        #join exogenous variables and response variable
+        variable_df = response_df[[response_variable]].join(exogenous_df)
+        #omit the constant column from the plot
+        variable_df.drop(labels='const', axis=1, inplace=True)
+
+        #make the scatter plot matrix
+        sm = scatter_matrix(variable_df, alpha=alpha, figsize=figsize, ax=ax,
+                            diagonal=diagonal)
+        if pretty:
+            #rotate the labels
+            [s.xaxis.label.set_rotation(45) for s in sm.reshape(-1)]
+            [s.yaxis.label.set_rotation(45)  for s in sm.reshape(-1)]
+            #offset y label
+            [s.get_yaxis().set_label_coords(-.5, 0.5) for s in sm.reshape(-1)]
 
     @staticmethod
     def _plot_xy_scatter_fit(ax, x_obs, y_obs, x_fit, y_fit, l_ci, u_ci, x_label, y_label, add_legend=True):
