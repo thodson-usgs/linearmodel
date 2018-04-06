@@ -178,7 +178,7 @@ class LinearModel(abc.ABC):
 
         if transform:
             transform_function = self._transform_functions[transform]
-            dataset.ix[:, variable] = transform_function(dataset[raw_variable])
+            dataset.loc[:, variable] = transform_function(dataset[raw_variable])
 
     def _check_variable_names(self, variable_names):
         """
@@ -375,8 +375,8 @@ class LinearModel(abc.ABC):
             self._add_transformed_variables(variable, model_dataset)
 
         if model_dataset.shape != (0, 0):
-            model_dataset.ix[:, 'Missing'] = model_dataset.isnull().any(axis=1)
-            model_dataset.ix[:, 'Excluded'] = model_dataset.index.isin(self._excluded_observations)
+            model_dataset.loc[:, 'Missing'] = model_dataset.isnull().any(axis=1)
+            model_dataset.loc[:, 'Excluded'] = model_dataset.index.isin(self._excluded_observations)
 
         # TODO: Order data columns
         return model_dataset
