@@ -162,6 +162,7 @@ class DataManager:
         # Check the formatting of the date/time columns. If one of the correct formats is used, reformat
         # those date/time columns into a new timestamp column. If none of the correct formats are used,
         # return an invalid file format error to the user.
+        date_time_column_present = True
         if 'y' and 'm' and 'd' and 'H' and 'M' and 'S' in tab_delimited_df.columns:
             tab_delimited_df.rename(columns={"y": "year", "m": "month", "d": "day"}, inplace=True)
             tab_delimited_df.rename(columns={"H": "hour", "M": "minute", "S": "second"}, inplace=True)
@@ -175,12 +176,14 @@ class DataManager:
             tab_delimited_df.rename(columns={"Date": "DateTime"}, inplace=True)
             tab_delimited_df.drop(["Time"], axis=1, inplace=True)
         elif 'DateTime' in tab_delimited_df.columns:
-            # tab_delimited_df.rename(columns={"DateTime": "Timestamp"}, inplace=True)
             tab_delimited_df["DateTime"] = pd.to_datetime(tab_delimited_df["DateTime"], errors="coerce")
         else:
-            raise ValueError("Date and time information is incorrectly formatted.", file_path)
+            # raise ValueError("Date and time information is incorrectly formatted.", file_path)
+            date_time_column_present = False
 
-        tab_delimited_df.set_index("DateTime", drop=True, inplace=True)
+        if date_time_column_present:
+            tab_delimited_df.set_index("DateTime", drop=True, inplace=True)
+
         tab_delimited_df = tab_delimited_df.apply(pd.to_numeric, args=('coerce', ))
 
         return tab_delimited_df
