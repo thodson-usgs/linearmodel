@@ -73,11 +73,13 @@ def get_exog_df(explanatory_df, explanatory_variables):
     :return:
     """
 
+    # create an exogenous DataFrame beginning with the intercept column
     number_of_observations = explanatory_df.shape[0]
     intercept_data = np.ones((number_of_observations, 1))
     intercept_column = ['Intercept']
     exog_df = pd.DataFrame(data=intercept_data, columns=intercept_column)
 
+    # add all explanatory variables
     for variable_name in explanatory_variables:
         variable_transform, raw_variable = find_raw_variable(variable_name)
         transform_function = TRANSFORM_FUNCTIONS[variable_transform]
@@ -351,6 +353,13 @@ class LinearModel(abc.ABC):
         """
 
         return self._data_manager
+
+    def get_explanatory_variables(self):
+        """Returns a list containing the explanatory variables
+
+        :return:
+        """
+        return list(self._explanatory_variables)
 
     def get_excluded_observations(self):
         """Returns a time series of observations that have been excluded from the model.
@@ -1651,27 +1660,14 @@ class MultipleOLSModel(OLSModel):
 
         return response_estimate
 
-    def _get_exogenous_matrix(self, exogenous_df):
+    def _get_exogenous_matrix(self, explanatory_df):
         """
 
-        :param exogenous_df:
+        :param explanatory_df: DataFrame containing the non-transformed explanatory variables
         :return:
         """
 
-        # self._explanatory variables stores transformed variable names.
-        # find the raw variables and the corresponding transform
-        explanatory_transform = {raw_variable: transform for transform, raw_variable in
-                                 [self._find_raw_variable(var) for var in self._explanatory_variables]}
-
-        # create an exogenous DataFrame containing the transformed variables
-        exog = pd.DataFrame()
-        for raw_variable, transform in explanatory_transform.items():
-            assert (raw_variable in exogenous_df.keys())
-            transform_function = self._transform_functions[transform]
-            transformed_variable_name = self.get_variable_transform_name(raw_variable, transform)
-            exog[transformed_variable_name] = transform_function(exogenous_df[raw_variable])
-
-        exog = sm.add_constant(exog)
+        exog = get_exog_df(explanatory_df, list(self._explanatory_variables))
 
         return exog
 
