@@ -1,3 +1,4 @@
+import os
 import unittest
 
 import numpy as np
@@ -5,8 +6,10 @@ import pandas as pd
 
 from linearmodel.datamanager import DataManager
 
+current_path = os.path.dirname(os.path.realpath(__file__))
 
-class TestDataManager(unittest.TestCase):
+
+class TestDataManagerInit(unittest.TestCase):
 
     @staticmethod
     def get_data_frame_a():
@@ -52,6 +55,24 @@ class TestDataManager(unittest.TestCase):
         # test that DataFrames aren't the same instance
         self.assertFalse(data_manager_without_origin.get_data() is data_df)
         self.assertFalse(data_manager_without_origin.get_origin() is nan_origin_df)
+
+    def test_init_read_tab_delimited_file_no_datetime(self):
+        """Test the initialization of a DataManager instance using read_tab_delimited_data() from a file with no
+        date/time information
+        """
+
+        # pick a data file from the model test data set
+        test_data_file_path = os.path.join(current_path, 'data', 'model',
+                                           'TestMultipleOLSModelInit', 'test_model_init.txt')
+
+        # read the file into a DataManager
+        data_manager = DataManager.read_tab_delimited_data(test_data_file_path)
+
+        # read the file into a DataFrame
+        df = pd.read_table(test_data_file_path, sep='\t')
+
+        # make sure the DataManager's data and DataFrame are equal
+        pd.testing.assert_frame_equal(data_manager.get_data(), df)
 
 
 if __name__ == '__main__':
