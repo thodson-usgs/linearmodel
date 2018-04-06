@@ -6,120 +6,53 @@ import numpy as np
 import pandas as pd
 
 from linearmodel.datamanager import DataManager
-from linearmodel.model import MultipleOLSModel
-from linearmodel.stats import ols_parameter_estimate
+from linearmodel.model import INVERSE_TRANSFORM_FUNCTIONS, find_raw_variable, get_exog_df, MultipleOLSModel
 
 current_path = os.path.dirname(os.path.realpath(__file__))
 
 model_path = os.path.join(current_path, 'data', 'model')
 
 
-def create_data_set(p=2, n=50, response_transform=None, explanatory_transform=None):
-    """Create a data set with p coefficients and n observations
-
-    :param p: Number of parameters (explanatory variables plus intercept)
-    :param n: Number of observations
-    :param response_transform: Transform of the response variable. None or 'log10'
-    :param explanatory_transform: Transforms of the explanatory variables.
-                                  None or dictionary containing index, transform items
-    :return: DataManager containing model data
+def create_test_data_set(response_variable, explanatory_variables, number_of_obs=50):
     """
 
-    # create an explanatory variable matrix
-    x = np.random.uniform(low=1, high=20, size=(n, p-1))
-
-    # copy the explanatory variables for the exogenous matrix
-    x_for_exog = x.copy()
-
-    # transform the explanatory variables for the exogenous matrix
-    if explanatory_transform is not None:
-        for index, transform in explanatory_transform.items():
-            if transform == 'log10':
-                transform_increase_factor = 5
-                x[:, index] = transform_increase_factor * x[:, index]
-                x_for_exog[:, index] = np.log10(x[:, index])
-            else:
-                raise ValueError('Unrecognized explanatory transform')
-
-    # add the intercept column to the explanatory variables matrix to get an exogenous matrix
-    exog = np.append(np.ones((n, 1)), x_for_exog, axis=1)
-
-    # create a response variable from the explanatory variables and parameters
-    # apply the beta vector to the exogenous matrix and add the error term if the response is not transformed
-    if response_transform is None:
-        # create a parameter vector to get the response variable
-        beta_high = 10
-        beta_low = 1
-        y_inverse = lambda var: var
-    # if the response is transformed, get the transformed response, then calculate the raw
-    elif response_transform == 'log10':
-        beta_high = 5
-        beta_low = 0.01
-        y_inverse = lambda var: np.power(10, var)
-    else:
-        raise ValueError('Unrecognized response transform')
-
-    # create a parameter vector, error terms, and y vector
-    beta_vector = np.random.uniform(low=beta_low, high=beta_high, size=(p, 1))
-    error_std = beta_vector[1:].max()/10
-    error_term = np.random.normal(0, error_std, (n, 1))
-    y = y_inverse(np.dot(exog, beta_vector) + error_term)
-
-    # create a DataFrame from the response and explanatory data
-    data = np.append(y, x, axis=1)
-    columns = ['y'] + ['x{:1}'.format(i) for i in range(1, p)]
-    df = pd.DataFrame(data=data, columns=columns)
-
-    # return a DataManager
-    return DataManager(df)
-
-
-def estimate_parameters(dm, response_variable='y', explanatory_variables=None,
-                        response_transform=None, explanatory_transform=None):
-    """Estimate the parameters of a data set created by create_data_set
-
-    :param dm: DataManager created by create_data_set
     :param response_variable:
-    :param explanatory_variables: List of explanatory variables
-    :param response_transform: Transform of the response variable. None or 'log10'
-    :param explanatory_transform: Transforms of the explanatory variables.
-                                  None or dictionary containing index, transform items
+    :param explanatory_variables:
+    :param number_of_obs:
     :return:
     """
-    df = dm.get_data()
 
-    if response_transform is None:
-        endog = df.as_matrix([response_variable])
-    elif response_transform == 'log10':
-        # transform the response variable
-        endog = np.log10(df.as_matrix([response_variable]))
+    # find the raw explanatory variables and create a random DataFrame with the number of raw explanatory variables
+    raw_explanatory_variables = list(set([raw_var for _, raw_var in
+                                          [find_raw_variable(var) for var in explanatory_variables]]))
+    explanatory_data = np.random.uniform(0.01, 10, size=(number_of_obs, len(raw_explanatory_variables)))
+    explanatory_df = pd.DataFrame(data=explanatory_data, columns=raw_explanatory_variables)
 
-    # DataManager returns the DataFrame sorted by columns, so explanatory variables are first
-    if explanatory_variables is None:
-        exog_columns = df.columns != response_variable
-        x = df.as_matrix(df.columns[exog_columns])
-    else:
-        exog_columns = explanatory_variables
-        x = df[exog_columns].as_matrix()
+    # get an exogenous DataFrame to calculate the response variable
+    exog_df = get_exog_df(explanatory_df, explanatory_variables)
 
-    if explanatory_transform is not None:
-        # transform the explanatory variables
-        for index, transform in explanatory_transform.items():
-            if transform == 'log10':
-                x[:, index] = np.log10(x[:, index])
+    # get the beta vector and error term
+    number_of_parameters = len(explanatory_variables) + 1
+    beta_vector = np.random.uniform(1, 10, size=(number_of_parameters, 1))
+    error_term = np.random.normal(0, 0.1, size=(number_of_obs, 1))
 
-    n = x.shape[0]
-    exog = np.append(np.ones((n, 1)), x, axis=1)
+    # calculate the response variable and create a DataFrame
+    response_transform, raw_response_variable = find_raw_variable(response_variable)
+    response_inverse_transform = INVERSE_TRANSFORM_FUNCTIONS[response_transform]
+    response_data = response_inverse_transform(np.dot(exog_df, beta_vector) + error_term)
+    response_df = pd.DataFrame(data=response_data, columns=[raw_response_variable])
 
-    parameter_estimate = ols_parameter_estimate(exog, endog)
+    # create a DataFrame containing response and explanatory data
+    test_data_df = pd.concat([response_df, explanatory_df], axis=1)
 
-    return parameter_estimate
+    # return a DataManager with the regression data
+    return DataManager(test_data_df)
 
 
 class TestMultipleOLSModelInit(unittest.TestCase):
     """Test the initialization of the MultipleOLSModel class"""
 
-    def _save_test_case_model_data(self, model_dataset):
+    def _save_test_case_data(self, model):
 
         test_case_name = sys._getframe(1).f_code.co_name
 
@@ -128,11 +61,24 @@ class TestMultipleOLSModelInit(unittest.TestCase):
         test_data_path = os.path.join(model_path, self.__class__.__name__)
         test_case_file_path = os.path.join(test_data_path, test_case_file_name)
 
-        model_dataset.to_csv(test_case_file_path, sep='\t')
+        response_variable = model.get_response_variable()
+        _, raw_response_variable = find_raw_variable(response_variable)
+
+        explanatory_variables = model.get_explanatory_variables()
+        raw_explanatory_variables = list(set([raw_var for _, raw_var in
+                                              [find_raw_variable(var) for var in explanatory_variables]]))
+
+        test_case_variables = [raw_response_variable] + raw_explanatory_variables + ['Fitted ' + response_variable]
+
+        model_dataset = model.get_model_dataset()
+        test_case_data = model_dataset[test_case_variables]
+
+        test_case_data.to_csv(test_case_file_path, sep='\t', index=False)
 
     def _test_model_init(self, test_case_parameters):
 
-        # print(sys._getframe(1).f_code.co_name)
+        # get the test case name
+        # (the name of the calling method)
         test_case_name = sys._getframe(1).f_code.co_name
 
         # find the test case data file path
@@ -142,10 +88,10 @@ class TestMultipleOLSModelInit(unittest.TestCase):
 
         # read the test case data and get the fitted values
         test_case_df = pd.read_table(test_case_file_path, dtype=np.float64)
-        fitted_df = test_case_df.filter(regex='Fitted *')
+        expected_fitted_results = test_case_df.filter(regex='Fitted *')
 
         # drop the fitted values and create a data set to pass to the LinearModel
-        data_set_df = test_case_df.drop(fitted_df.keys(), axis=1)
+        data_set_df = test_case_df.drop(expected_fitted_results.keys(), axis=1)
         data_set = DataManager(data_set_df)
 
         # initialize a model without specifying the response and explanatory variables
@@ -157,9 +103,11 @@ class TestMultipleOLSModelInit(unittest.TestCase):
         # test the model form
         self.assertEqual(model.get_model_formula(), test_case_parameters['model_form'])
 
+        # test that the model results are close enough to the expected results
         model_dataset = model.get_model_dataset()
-        fitted_results = model_dataset[fitted_df.keys()]
-        pd.testing.assert_frame_equal(fitted_results, fitted_df)
+        fitted_results = model_dataset[expected_fitted_results.keys()]
+        is_close = np.isclose(fitted_results.as_matrix(), expected_fitted_results.as_matrix(), equal_nan=True)
+        self.assertTrue(np.all(is_close))
 
     def test_model_init(self):
         """Test the successful initialization of a MultipleOLSModel instance"""
@@ -236,6 +184,26 @@ class TestMultipleOLSModelInit(unittest.TestCase):
         test_case_parameters = {'response_variable': 'log10(y)',
                                 'explanatory_variables': ['log10(x1)', 'log10(x2)'],
                                 'model_form': 'log10(y) ~ log10(x1) + log10(x2)'}
+        self._test_model_init(test_case_parameters)
+
+    def test_model_init_multiple_explanatory_transform(self):
+        """Test the initialization of a MultipleOLSModel instance when specifying multiple transformations of an
+        explanatory variable with other explanatory variables.
+        """
+
+        test_case_parameters = {'response_variable': 'y',
+                                'explanatory_variables': ['x1', 'log10(x1)', 'x2'],
+                                'model_form': 'y ~ x1 + log10(x1) + x2'}
+        self._test_model_init(test_case_parameters)
+
+    def test_model_init_multiple_explanatory_transform_single(self):
+        """Test the initialization of a MultipleOLSModel instance when specifying multiple transformations of a single
+        explanatory variable.
+        """
+
+        test_case_parameters = {'response_variable': 'y',
+                                'explanatory_variables': ['x1', 'log10(x1)'],
+                                'model_form': 'y ~ x1 + log10(x1)'}
         self._test_model_init(test_case_parameters)
 
 
