@@ -314,10 +314,21 @@ class DataManager:
 
         return type(self)(data, data_origin)
 
-    def get_data(self):
-        """Return a copy of the time series data contained within the manager.
+    def get_data(self, freq=None, time_index=None):
+        """Returns a Pandas DataFrame containing managed data.
 
-        :return: Copy of the data being managed in a DataFrame
+        If freq is specified, the returned DataFrame is interpolated on the frequency between the first and
+        last times in the managed data time range.
+
+        If time_index is specified, the returned DataFrame is interpolated on the indices.
+
+        If freq and time_index is specified, time_index will be resampled with the frequency given by freq.
+
+        :param freq: Sample frequency
+        :type freq: str
+        :param time_index: Indices to interpolate data
+        :type time_index: pandas.DateTimeIndex
+        :return:
         """
 
         variable_names = self.get_variable_names()
