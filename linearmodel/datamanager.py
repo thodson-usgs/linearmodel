@@ -314,7 +314,7 @@ class DataManager:
 
         return type(self)(data, data_origin)
 
-    def get_data(self, step=None, index=None):
+    def get_data(self, index_step=None, interpolate_index=None):
         """Returns a Pandas DataFrame containing managed data.
 
         If step is specified, the returned DataFrame is interpolated on the frequency between the first and
@@ -324,16 +324,41 @@ class DataManager:
 
         If step and index are specified, index will be resampled with the frequency given by step.
 
-        :param step: Sample frequency
-        :type step: str
-        :param index: Indices to interpolate data
-        :type index: pandas.DateTimeIndex
+        :param index_step:
+        :param interpolate_index:
         :return:
         """
 
+        # get a copy of the contained DataFrame
         variable_names = self.get_variable_names()
+        df = self._data[variable_names]
 
-        return self._data[variable_names]
+        # resample_index or index is specified
+        if interpolate_index is not None or index_step is not None:
+
+            # if resample_index isn't specified, set it to the internal data index
+            if interpolate_index is None:
+                interpolate_index = self._data.index
+
+            # if index_step is specified, get a new resample_index based on the step
+            if index_step is not None:
+                interpolate_index = np.array(interpolate_index)
+                index_range = interpolate_index[-1] - interpolate_index[0]
+                num_index = int(index_range / index_step) + 1
+                interpolate_index = interpolate_index[0] + np.arange(num_index) * index_step
+                interpolate_index = pd.Index(interpolate_index)
+                if isinstance(interpolate_index, pd.DatetimeIndex):
+                    interpolate_index.name = 'DateTime'
+
+            # add a DataFrame with indices to interpolate, sort the values, drop duplicates if any, and get a
+            # DataFrame on the resampled indices
+            interpolate_df = df.append(pd.DataFrame(index=interpolate_index))
+            interpolate_df.sort_index(kind='mergesort', inplace=True)
+            resampled_df = interpolate_df.interpolate('index')
+            resampled_df.drop_duplicates(keep='first', inplace=True)
+            df = resampled_df.loc[interpolate_index]
+
+        return df[variable_names]
 
     def get_origin(self):
         """Return a DataFrame containing the variable origins.
