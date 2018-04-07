@@ -1,4 +1,6 @@
+import copy
 import os
+import tempfile
 import unittest
 
 import numpy as np
@@ -9,9 +11,9 @@ from linearmodel.datamanager import DataManager
 current_path = os.path.dirname(os.path.realpath(__file__))
 
 
-def create_random_dataframe():
+def create_random_dataframe(number_of_rows=50):
     variable_names = ['a', 'b', 'c', 'd', 'e']
-    data_size = (50, 5)
+    data_size = (number_of_rows, 5)
 
     data = np.random.normal(size=data_size)
     data_df = pd.DataFrame(data=data, columns=variable_names)
@@ -116,6 +118,57 @@ class TestDataManagerGetData(unittest.TestCase):
         df2 = create_linspace_dataframe(data_start, data_stop, index_start, index_stop, columns, num_rows_2)
         index_step = df2.index[1] - df2.index[0]
         pd.testing.assert_frame_equal(dm.get_data(index_step=index_step), df2)
+
+
+class TestDataManagerUtil(unittest.TestCase):
+    """Test miscellaneous features of the DataManager class"""
+
+    def setUp(self):
+        """
+
+        :return:
+        """
+
+        fd, temp_hdf_path = tempfile.mkstemp(suffix='.h5')
+        os.close(fd)
+        self.temp_hdf_path = temp_hdf_path
+
+    def test_deepcopy(self):
+        """Test the deepcopy functionality of instances of the DataManager class"""
+        df = create_random_dataframe()
+        dm1 = DataManager(df)
+        dm2 = copy.deepcopy(dm1)
+        self.assertTrue(dm1.equals(dm2))
+        self.assertIsNot(dm1, dm2)
+
+    def test_equals(self):
+        """Test the DataManager.equals() method"""
+        df1 = create_random_dataframe()
+
+        self.assertTrue(df1.equals(df1))
+
+    def test_hdf(self):
+        """Test the DataManager.to_hdf() and DataManager.read_hdf() methods."""
+
+        key = '/dm'
+
+        data = create_random_dataframe()
+        data_origin = DataManager.create_data_origin(data, 'test')
+        dm1 = DataManager(data, data_origin)
+        dm1.to_hdf(self.temp_hdf_path, key)
+
+        dm2 = DataManager.read_hdf(self.temp_hdf_path, key)
+
+        self.assertTrue(dm1.equals(dm2))
+
+    def tearDown(self):
+        """
+
+        :return:
+        """
+
+        if os.path.isfile(self.temp_hdf_path):
+            os.remove(self.temp_hdf_path)
 
 
 class TestDataManagerInit(unittest.TestCase):
