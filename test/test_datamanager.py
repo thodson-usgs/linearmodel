@@ -19,17 +19,14 @@ def create_random_dataframe():
     return data_df
 
 
-def create_linspace_dataframe(data_start, data_end, index_start, index_stop, columns, num_rows=6):
+def create_linspace_dataframe(data_start, data_stop, index_start, index_stop, columns, num_rows=6):
 
     # initialize a list containing the data for the first column
-    data_list = [np.linspace(data_start, data_end, num_rows)]
+    data_list = [np.linspace(data_start, data_stop, num_rows)]
 
     # create data for the second to the last columns
-    data_step = data_list[0][1] - data_list[0][0]
     for i in range(1, len(columns)+1):
-        column_start = data_list[i-1][0] + data_step/2
-        column_end = data_list[i-1][-1] + data_step/2
-        column_data = np.linspace(column_start, column_end, num_rows)
+        column_data = i*data_list[i-1][-1] + (i+1)*data_list[i-1]
         data_list.append(column_data)
 
     # create a DataFrame with the column data
@@ -41,11 +38,15 @@ def create_linspace_dataframe(data_start, data_end, index_start, index_stop, col
     try:
         index = np.linspace(index_start, index_stop, num_rows)
     except TypeError:
-        datetime_step = (index_stop - index_start) / num_rows
-        index = np.arange(index_start, index_stop, datetime_step)
+        index_range = index_stop - index_start
+        datetime_step = index_range / (num_rows - 1)
+        index = index_start + np.arange(num_rows) * datetime_step
 
     # set the index
     df.set_index(index, inplace=True)
+
+    if isinstance(df.index, pd.DatetimeIndex):
+        df.index.name = 'DateTime'
 
     return df
 
@@ -66,6 +67,55 @@ class TestDataManagerGetData(unittest.TestCase):
         # test if the data manager returns a copy of the DataFrame
         pd.testing.assert_frame_equal(data_manager.get_data(), data_df)
         self.assertIsNot(results_df, data_df)
+
+    def test_get_data_float_index_specify_step(self):
+        """Test DataManager.get_data() a float type data index and the step parameter specified"""
+
+        data_start = 0
+        data_stop = 10
+        index_start = 0.
+        index_stop = 10.
+        columns = ['x', 'y']
+        num_rows = 6
+
+        df1 = create_linspace_dataframe(data_start, data_stop, index_start, index_stop, columns, num_rows)
+        dm = DataManager(df1)
+
+        num_rows_1 = num_rows
+        step_1 = (index_stop - index_start) / (num_rows_1 - 1)
+        results_1 = dm.get_data(index_step=step_1)
+
+        # with the same step, the DataFrames should be equal
+        pd.testing.assert_frame_equal(results_1, df1)
+
+        # get a linearly created DataFrame with twice the amount of rows, interpolate at the correct step, and
+        # compare the results
+        num_rows_2 = 2*num_rows_1 - 1
+        df2 = create_linspace_dataframe(data_start, data_stop, index_start, index_stop, columns, num_rows*2 - 1)
+        step_2 = (index_stop - index_start) / (num_rows_2 - 1)
+        results_2 = dm.get_data(index_step=step_2)
+
+        pd.testing.assert_frame_equal(results_2, df2)
+
+    def test_get_data_datetime_index_specify_step(self):
+        """Test DataManager.get_data() with a DateTimeIndex type data index and step parameter specified"""
+
+        data_start = 0.
+        data_stop = 10.
+        index_start = index_start = np.datetime64('2018-01-01')
+        index_step = np.timedelta64(15*60*1000, 'ms')
+        num_rows = 7
+        index_stop = index_start + index_step * num_rows
+        columns = ['x', 'y']
+
+        df1 = create_linspace_dataframe(data_start, data_stop, index_start, index_stop, columns, num_rows)
+        dm = DataManager(df1)
+        pd.testing.assert_frame_equal(dm.get_data(), df1)
+
+        num_rows_2 = 12
+        df2 = create_linspace_dataframe(data_start, data_stop, index_start, index_stop, columns, num_rows_2)
+        index_step = df2.index[1] - df2.index[0]
+        pd.testing.assert_frame_equal(dm.get_data(index_step=index_step), df2)
 
 
 class TestDataManagerInit(unittest.TestCase):
