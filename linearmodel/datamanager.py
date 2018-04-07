@@ -1,8 +1,9 @@
-import copy
 from datetime import timedelta
 
 import pandas as pd
 import numpy as np
+
+from linearmodel.util import CopyMixin, HDFMixin
 
 
 class DataException(Exception):
@@ -20,11 +21,10 @@ class ConcurrentObservationError(DataException):
     pass
 
 
-class DataManager:
-    """Base class for data subclasses.
+class DataManager(CopyMixin, HDFMixin):
+    """Class for data management."""
 
-    This class provides methods for data management subclasses.
-    """
+    _hdf_members = ['_data', '_data_origin']
 
     def __init__(self, data, data_origin=None):
         """Initialize a Data object.
@@ -55,14 +55,6 @@ class DataManager:
         if isinstance(self._data.index, pd.DatetimeIndex):
             self._data.index.name = 'DateTime'
         self._data_origin = data_origin.copy(deep=True)
-
-    def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for k, v, in self.__dict__.items():
-            setattr(result, k, copy.deepcopy(v, memo))
-        return result
 
     def _check_for_concurrent_obs(self, other):
         """Check other DataManager for concurrent observations of a variable. Raise ConcurrentObservationError if
@@ -314,6 +306,21 @@ class DataManager:
 
         return type(self)(data, data_origin)
 
+    def equals(self, other):
+        """
+
+        :param other:
+        :return:
+        """
+
+        data_self = self.get_data()
+        data_other = other.get_data()
+
+        data_origin_self = self.get_origin()
+        data_origin_other = other.get_origin()
+
+        return data_self.equals(data_other) and data_origin_self.equals(data_origin_other)
+
     def get_data(self, index_step=None, interpolate_index=None):
         """Returns a Pandas DataFrame containing managed data.
 
@@ -508,6 +515,17 @@ class DataManager:
         return self.add_data_manager(matched_surrogate_data_manager)
 
     @classmethod
+    def read_hdf(cls, hdf_path, key='/'):
+        """
+
+        :param hdf_path:
+        :param key:
+        :return:
+        """
+
+        return cls._read_hdf(hdf_path, hdf_key=key)
+
+    @classmethod
     def read_tab_delimited_data(cls, file_path):
         """Read a tab-delimited file containing a time series and return a DataManager instance.
 
@@ -526,3 +544,14 @@ class DataManager:
         data_origin = pd.DataFrame(data=origin, columns=['variable', 'origin'])
 
         return cls(tab_delimited_df, data_origin)
+
+    def to_hdf(self, hdf_path, key='/'):
+        """Write instance to an HDF file.
+
+        :param hdf_path: The path to an HDF file
+        :param key: Identifier for the group in the HDF file
+        :return:
+        """
+
+        hdf_dict = self.__dict__
+        self._to_hdf(hdf_dict, hdf_path, key)
