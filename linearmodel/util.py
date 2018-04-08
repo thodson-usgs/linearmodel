@@ -1,6 +1,6 @@
+import abc
 import copy
 
-import h5py
 import pandas as pd
 
 
@@ -19,59 +19,58 @@ class CopyMixin:
 class HDFMixin:
     """Mixin class to provide a general method for saving an object state to an HDF file"""
 
-    def _get_to_hdf_dict(self, hdf_members):
-        """Create a dictionary to pass to _to_hdf(). Items in the dictionary are defined in _hdf_members
-
-        :param hdf_members: List of members to save to HDF.
-        :return:
-        """
-
-        # return a dictionary with key, value pairs, with keys defined in self._hdf_members
-        return {key: self.__dict__[key] for key in hdf_members}
-
     @classmethod
-    def _read_hdf(cls, hdf_path, hdf_key='/'):
+    def _read_hdf(cls, member_list, store, key):
         """
 
-        :param hdf_path:
-        :param hdf_key:
+        :param member_list:
+        :param store:
+        :param key:
         :return:
         """
 
         result = cls.__new__(cls)
-        with h5py.File(hdf_path, 'r') as f:
-            members = list(f[hdf_key])
-        for m in members:
-            member_key = hdf_key + '/' + m
-            df = pd.read_hdf(hdf_path, key=member_key)
-            setattr(result, m, df)
+        for member_name in member_list:
+            member_key = key + '/' + member_name
+            try:
+                member_value = pd.read_hdf(store, member_key)
+            except TypeError:
+                member_value = cls.read_hdf(store, member_key)
+            setattr(result, member_name, member_value)
 
         return result
 
     @classmethod
-    def _to_hdf(cls, item_dict, hdf_path, hdf_key):
+    def _to_hdf(cls, item_dict, store, key):
         """Writes data from item_dict to an HDF file
 
         :param item_dict: Dictionary containing items to write to HDF
-        :param hdf_path: Path to an HDF file
-        :param hdf_key: Identifier for the top-level group in the HDF file
+        :param store: Open HDFStore object
+        :param key: Identifier for the top-level group in the HDF file
         :return: None
         """
+        if not store.is_open:
+            raise IOError('The HDFStore must be open')
 
-        for key, value in item_dict.items():
+        for k, v in item_dict.items():
             # create the next-level key
-            next_hdf_key = hdf_key + '/' + key
+            next_hdf_key = key + '/' + k
 
             # if the item is a dictionary, call this method to write it
-            if isinstance(value, dict):
-                cls._to_hdf(value, hdf_path, next_hdf_key)
+            if isinstance(v, dict):
+                cls._to_hdf(v, store, next_hdf_key)
 
-            # otherwise use the item's to_hdf method if it has one or write the item to the HDF
+            # otherwise use the item's to_hdf method
             else:
-                try:
-                    value.to_hdf(hdf_path, next_hdf_key)
-                except AttributeError:
-                    print("Saving " + key + " to " + hdf_path)
-                    with h5py.File(hdf_path, 'r+') as f:
-                        f[next_hdf_key] = value
+                v.to_hdf(store, next_hdf_key)
 
+    @classmethod
+    @abc.abstractmethod
+    def read_hdf(cls, path_or_buf, key=None):
+        """
+
+        :param path_or_buf:
+        :param key:
+        :return:
+        """
+        pass

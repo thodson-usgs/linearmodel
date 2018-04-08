@@ -147,8 +147,25 @@ class TestDataManagerUtil(unittest.TestCase):
 
         self.assertTrue(df1.equals(df1))
 
-    def test_hdf(self):
-        """Test the DataManager.to_hdf() and DataManager.read_hdf() methods."""
+    def test_hdf_buf(self):
+        """Test the DataManager.to_hdf() and DataManager.read_hdf() methods when saving with a pd.HDFStore instance"""
+
+        key = '/dm/'
+
+        data = create_random_dataframe()
+        data_origin = DataManager.create_data_origin(data, 'test')
+        dm1 = DataManager(data, data_origin)
+
+        with pd.HDFStore(self.temp_hdf_path) as store:
+            dm1.to_hdf(store, key)
+
+        with pd.HDFStore(self.temp_hdf_path) as store:
+            dm2 = DataManager.read_hdf(store, key)
+
+        self.assertTrue(dm1.equals(dm2))
+
+    def test_hdf_path(self):
+        """Test the DataManager.to_hdf() and DataManager.read_hdf() methods when saving with a file path"""
 
         key = '/dm'
 

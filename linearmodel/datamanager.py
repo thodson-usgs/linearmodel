@@ -515,15 +515,30 @@ class DataManager(CopyMixin, HDFMixin):
         return self.add_data_manager(matched_surrogate_data_manager)
 
     @classmethod
-    def read_hdf(cls, hdf_path, key='/'):
+    def read_hdf(cls, path_or_buf, key=None):
         """
 
-        :param hdf_path:
+        :param path_or_buf:
         :param key:
         :return:
         """
+        if key is None:
+            key = '/'
 
-        return cls._read_hdf(hdf_path, hdf_key=key)
+        member_list = ['_data', '_data_origin']
+        # result = cls.__new__(cls)
+        if isinstance(path_or_buf, pd.HDFStore):
+            # for m in members:
+            #     member_key = key + '/' + m
+            #     setattr(result, m, pd.read_hdf(path_or_buf, member_key))
+            result = cls._read_hdf(member_list, path_or_buf, key)
+        else:
+            with pd.HDFStore(path_or_buf) as store:
+                # for m in members:
+                #     member_key = key + '/' + m
+                #     setattr(result, m, pd.read_hdf(store, member_key))
+                result = cls._read_hdf(member_list, store, key)
+        return result
 
     @classmethod
     def read_tab_delimited_data(cls, file_path):
@@ -545,13 +560,17 @@ class DataManager(CopyMixin, HDFMixin):
 
         return cls(tab_delimited_df, data_origin)
 
-    def to_hdf(self, hdf_path, key='/'):
+    def to_hdf(self, path_or_buf, key):
         """Write instance to an HDF file.
 
-        :param hdf_path: The path to an HDF file
+        :param path_or_buf: The path to an HDF file
         :param key: Identifier for the group in the HDF file
         :return:
         """
 
         hdf_dict = self.__dict__
-        self._to_hdf(hdf_dict, hdf_path, key)
+        if isinstance(path_or_buf, str):
+            with pd.HDFStore(path_or_buf) as store:
+                self._to_hdf(hdf_dict, store, key)
+        else:
+            self._to_hdf(hdf_dict, path_or_buf, key)
