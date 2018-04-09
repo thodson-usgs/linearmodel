@@ -1864,91 +1864,44 @@ class MultipleOLSModel(OLSModel):
             self._update_model()
 
 
-class ComplexOLSModel(OLSModel):
-    """"""
+class ComplexOLSModel(MultipleOLSModel):
 
-    def __init__(self, data_manager, response_variable=None, explanatory_variable=None):
-        """
+    def __init__(self, data_manager, response_variable=None, explanatory_variables=None):
+        """Complex Ordinary Least Squares Model
+
+        Extends MultipleOLSModel and restricts the use of explanatory variables to multiple transformations of a single
+        variable.
 
         :param data_manager:
         :param response_variable:
-        :param explanatory_variable:
+        :param explanatory_variables:
         """
 
-        super().__init__(data_manager, response_variable)
+        if explanatory_variables is not None:
+            self._check_explanatory_variables(explanatory_variables)
 
-        self._explanatory_variable_transform = [None]
+        super().__init__(data_manager, response_variable, explanatory_variables)
 
-        if explanatory_variable:
-            self.set_explanatory_variable(explanatory_variable)
-        else:
-            self.set_explanatory_variable(data_manager.get_variable_names()[1])
+    @classmethod
+    def _check_explanatory_variables(cls, explanatory_variables):
+        """Checks a list of explanatory variables for a single raw explanatory variable.
 
-    def _get_exogenous_matrix(self, exogenous_df):
-        """
+        Raises ValueError on finding more than one raw explanatory variables.
 
+        :param explanatory_variables: List of explanatory variables
         :return:
         """
 
-        explanatory_variable = self.get_explanatory_variable()
+        raw_explanatory_variable = None
 
-        assert (explanatory_variable in exogenous_df.keys())
-
-        exog = pd.DataFrame()
-
-        for transform in self._explanatory_variable_transform:
-            transformed_variable_name = self.get_variable_transform_name(explanatory_variable, transform)
-            transform_function = self._transform_functions[transform]
-            exog[transformed_variable_name] = transform_function(exogenous_df[explanatory_variable])
-
-        exog = sm.add_constant(exog)
-
-        return exog
-
-    def add_explanatory_var_transform(self, transform):
-        """Add a transformation to the explanatory variable
-
-        :param transform:
-        :return:
-        """
-
-        self.check_transform(transform)
-
-        self._explanatory_variable_transform.append(transform)
-
-        self._create_model()
-
-    def get_explanatory_variable(self):
-        """Return the current explanatory variable
-
-        :return:
-        """
-
-        return self._explanatory_variables[0]
-
-    def get_model_formula(self):
-        """Return the formula of the model
-
-        :return:
-        """
-
-        if self._response_variable and self._explanatory_variables[0]:
-
-            response_var_transform = self._variable_transform[self._response_variable]
-            model_response_var = self.get_variable_transform_name(self._response_variable, response_var_transform)
-
-            explanatory_variables = []
-            for transform in self._explanatory_variable_transform:
-                explanatory_variables.append(self.get_variable_transform_name(self._explanatory_variables[0],
-                                                                              transform))
-
-            model_formula = model_response_var + ' ~ ' + ' + '.join(explanatory_variables)
-
-        else:
-
-            model_formula = None
-
-        return model_formula
+        for variable in explanatory_variables:
+            _, raw_variable = cls._find_raw_variable(variable)
+            if raw_explanatory_variable is None:
+                raw_explanatory_variable = raw_variable
+            elif raw_variable != raw_explanatory_variable:
+                raise ValueError("{0} is not a transformation of {1}. "
+                                 + "Only one non-transformed variable allowed.".format(raw_variable,
+                                                                                       raw_explanatory_variable))
 
     def plot(self, plot_type='variable_scatter', ax=None, add_legend=True):
         """
@@ -1981,14 +1934,14 @@ class ComplexOLSModel(OLSModel):
             # get the observed response and explanatory variables
             model_dataset = self.get_model_dataset()
             excluded_and_missing_index = model_dataset['Excluded'] & model_dataset['Missing']
-            explanatory_variable = self.get_explanatory_variable()
+            explanatory_variable = self.get_explanatory_variables()[0]
             response_variable = self.get_response_variable()
             x_obs = model_dataset.ix[~excluded_and_missing_index, explanatory_variable].as_matrix()
             y_obs = model_dataset.ix[~excluded_and_missing_index, response_variable].as_matrix()
 
             # get a fitted exogenous matrix
             x_fit = np.linspace(np.min(x_obs), np.max(x_obs))
-            x_df = pd.DataFrame(data=x_fit, columns=[self.get_explanatory_variable()])
+            x_df = pd.DataFrame(data=x_fit, columns=[self.get_explanatory_variables()[0]])
             exog_fit = self._get_exogenous_matrix(x_df).as_matrix()
 
             # get the inversely transformed fitted response variable and confidence intervals
@@ -2007,40 +1960,15 @@ class ComplexOLSModel(OLSModel):
 
             super().plot(plot_type, ax)
 
-    def remove_explanatory_var_transform(self, transform):
+    def set_explanatory_variables(self, variables):
         """
 
-        :param transform:
+        :param variables:
         :return:
         """
 
-        if transform in self._explanatory_variable_transform:
-            self._explanatory_variable_transform.remove(transform)
-            if len(self._explanatory_variable_transform) < 1:
-                self._explanatory_variable_transform.append(None)
-
-        self._create_model()
-
-    def reset_explanatory_var_transform(self):
-        """
-
-        :return:
-        """
-
-        self._explanatory_variable_transform = [None]
-
-        self._create_model()
-
-    def set_explanatory_variable(self, variable):
-        """
-
-        :param variable:
-        :return:
-        """
-
-        self._check_variable_names([variable])
-        self._explanatory_variables = (variable,)
-        self._update_model()
+        self._check_explanatory_variables(variables)
+        super().set_explanatory_variables(variables)
 
 
 class CompoundLinearModel(LinearModel):
