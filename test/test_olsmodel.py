@@ -97,20 +97,32 @@ class TestOLSModelInit(unittest.TestCase):
 
 
 class TestComplexOLSModelInit(TestOLSModelInit):
-    """Test the initialization of instances of SimpleOLSModel class"""
+    """Test the initialization of instances of ComplexOLSModel class"""
 
     class_test_case_parameters = {'test_class': ComplexOLSModel}
 
     def test_model_init(self):
         """Test the successful initialization of a ComplexOLSModel instance"""
 
-        test_case_parameters = {'init_kwargs': {'response_variable': None, 'explanatory_variable': None},
+        test_case_parameters = {'init_kwargs': {'response_variable': None, 'explanatory_variables': ['x', 'log10(x)']},
                                 'model_variables': {'response_variable': 'y',
                                                     'explanatory_variables': ['x', 'log10(x)']},
                                 'model_form': 'y ~ x + log10(x)'}
         test_case_parameters.update(self.class_test_case_parameters)
-        self._create_test_case_data(test_case_parameters)
         self._test_model_init(test_case_parameters)
+
+    def test_model_init_two_raw_variables(self):
+        """Test the initialization of a ComplexOLSModel class with more than one raw explanatory variable."""
+        test_case_parameters = {'init_kwargs': {'response_variable': None,
+                                                'explanatory_variables': ['x1', 'log10(x2)']},
+                                'model_variables': {'response_variable': 'y',
+                                                    'explanatory_variables': ['x1', 'log10(x2)']},
+                                'model_form': 'y ~ x1 + log10(x2)'}
+        test_case_parameters.update(self.class_test_case_parameters)
+        data_set = create_linear_model_test_data_set(test_case_parameters['model_variables']['response_variable'],
+                                                     test_case_parameters['model_variables']['explanatory_variables'])
+        self.assertRaises(ValueError, test_case_parameters['test_class'], [data_set],
+                          **test_case_parameters['model_variables'])
 
 
 class TestMultipleOLSModelInit(TestOLSModelInit):
@@ -244,6 +256,16 @@ class TestOLSModelHDF(unittest.TestCase):
         fd, temp_hdf_path = tempfile.mkstemp(suffix='.h5')
         os.close(fd)
         self.temp_hdf_path = temp_hdf_path
+
+    def test_complexolsmodel_hdf(self):
+        """Test the functionality of the ComplexOLSModel.to_hdf() and read_hdf() methods"""
+
+        key = '/ComplexOLSModelHDFtest'
+        data = create_linear_model_test_data_set('y', ['x', 'log10(x)'])
+        model = ComplexOLSModel(data, response_variable='y', explanatory_variables=['x', 'log10(x)'])
+        model.to_hdf(self.temp_hdf_path, key)
+        model_from_hdf = ComplexOLSModel.read_hdf(self.temp_hdf_path, key)
+        self.assertTrue(model.equals(model_from_hdf))
 
     def test_simpleolsmodel_hdf(self):
         """Test the functionality of the SimpleOLSModel.to_hdf() and read_hdf() methods"""
