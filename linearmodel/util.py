@@ -1,4 +1,3 @@
-import abc
 import copy
 
 import pandas as pd
@@ -16,8 +15,8 @@ class CopyMixin:
         return result
 
 
-class HDFMixin:
-    """Mixin class to provide a general method for saving an object state to an HDF file"""
+class HDFio:
+    """Class saving and retrieving an object state to and from an HDF file"""
 
     _scalar_types = (str, bool, type(None))
     _list_types = (list, tuple, pd.DatetimeIndex)

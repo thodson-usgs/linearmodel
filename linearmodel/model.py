@@ -18,7 +18,7 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 from linearmodel import datamanager
 from linearmodel import stats as lmstats
-from linearmodel.util import HDFMixin
+from linearmodel.util import HDFio
 
 
 TRANSFORM_VARIABLE_TEMPLATES = {None: 'x',
@@ -1438,9 +1438,9 @@ class OLSModel(LinearModel, abc.ABC):
                            '_data_manager': datamanager.DataManager}
         if isinstance(path_or_buff, str):
             with pd.HDFStore(path_or_buff) as store:
-                attributes = HDFMixin.read_hdf(store, attribute_types, key)
+                attributes = HDFio.read_hdf(store, attribute_types, key)
         else:
-            attributes = HDFMixin.read_hdf(path_or_buff, attribute_types, key)
+            attributes = HDFio.read_hdf(path_or_buff, attribute_types, key)
 
         attributes.update({'_is_init': True})
 
@@ -1468,9 +1468,9 @@ class OLSModel(LinearModel, abc.ABC):
         attributes_dict = {name: self.__dict__[name] for name in attributes_to_save}
         if isinstance(path_or_buff, str):
             with pd.HDFStore(path_or_buff) as store:
-                HDFMixin.to_hdf(store, attributes_dict, key)
+                HDFio.to_hdf(store, attributes_dict, key)
         else:
-            HDFMixin.to_hdf(path_or_buff, attributes_dict, key)
+            HDFio.to_hdf(path_or_buff, attributes_dict, key)
 
 
 class SimpleOLSModel(OLSModel):
