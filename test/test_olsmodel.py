@@ -209,7 +209,7 @@ class TestSimpleOLSModelInit(TestOLSModelInit):
                                 'init_kwargs': {'response_variable': None, 'explanatory_variable': None},
                                 'model_variables': {'response_variable': 'y', 'explanatory_variable': 'x'},
                                 'model_form': 'y ~ x'}
-        self._create_test_case_data(test_case_parameters)
+        self._test_model_init(test_case_parameters)
 
 
 class TestOLSModelHDF(unittest.TestCase):
@@ -228,11 +228,20 @@ class TestOLSModelHDF(unittest.TestCase):
     def test_simpleolsmodel_hdf(self):
         """Test the functionality of the SimpleOLSModel.to_hdf() and read_hdf() methods"""
 
-        key = '/'
+        key = '/SimpleOLSModelHDFtest'
         data = create_linear_model_test_data_set('y', ['x'])
         model = SimpleOLSModel(data, response_variable='y', explanatory_variable='x')
         model.to_hdf(self.temp_hdf_path, key)
-        model_from_hdf = SimpleOLSModel.read_hdf(self.temp_hdf_path)
+        model_from_hdf = SimpleOLSModel.read_hdf(self.temp_hdf_path, key)
+        self.assertTrue(model.equals(model_from_hdf))
+
+    def test_multipleolsmodel_hdf(self):
+        """Test the functionality of the SimpleOLSModel.to_hdf() and read_hdf() methods"""
+        key = '/MultipleOLSModelHDFtest'
+        data = create_linear_model_test_data_set('y', ['x1', 'x2'])
+        model = MultipleOLSModel(data, response_variable='y', explanatory_variables=['x1', 'x2'])
+        model.to_hdf(self.temp_hdf_path, key)
+        model_from_hdf = MultipleOLSModel.read_hdf(self.temp_hdf_path, key)
         self.assertTrue(model.equals(model_from_hdf))
 
     def tearDown(self):
