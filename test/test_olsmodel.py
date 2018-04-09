@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from linearmodel.datamanager import DataManager
-from linearmodel.model import find_raw_variable, SimpleOLSModel, MultipleOLSModel
+from linearmodel.model import find_raw_variable, ComplexOLSModel, SimpleOLSModel, MultipleOLSModel
 from test.test_util import create_linear_model_test_data_set
 
 current_path = os.path.dirname(os.path.realpath(__file__))
@@ -30,9 +30,12 @@ class TestOLSModelInit(unittest.TestCase):
         self._save_test_case_data(model)
 
     def _save_test_case_data(self, model):
-        """Only call from _create_test_case_data()"""
 
-        test_case_name = sys._getframe(2).f_code.co_name
+        # test to see if this was called from _create_test_case_data
+        if sys._getframe(1).f_code.co_name == '_create_test_case_data':
+            test_case_name = sys._getframe(2).f_code.co_name
+        else:
+            test_case_name = sys._getframe(1).f_code.co_name
 
         # find the test case data file path
         test_case_file_name = test_case_name + ".txt"
@@ -91,6 +94,23 @@ class TestOLSModelInit(unittest.TestCase):
         fitted_results = model_dataset[expected_fitted_results.keys()]
         is_close = np.isclose(fitted_results.as_matrix(), expected_fitted_results.as_matrix(), equal_nan=True)
         self.assertTrue(np.all(is_close))
+
+
+class TestComplexOLSModelInit(TestOLSModelInit):
+    """Test the initialization of instances of SimpleOLSModel class"""
+
+    class_test_case_parameters = {'test_class': ComplexOLSModel}
+
+    def test_model_init(self):
+        """Test the successful initialization of a ComplexOLSModel instance"""
+
+        test_case_parameters = {'init_kwargs': {'response_variable': None, 'explanatory_variable': None},
+                                'model_variables': {'response_variable': 'y',
+                                                    'explanatory_variables': ['x', 'log10(x)']},
+                                'model_form': 'y ~ x + log10(x)'}
+        test_case_parameters.update(self.class_test_case_parameters)
+        self._create_test_case_data(test_case_parameters)
+        self._test_model_init(test_case_parameters)
 
 
 class TestMultipleOLSModelInit(TestOLSModelInit):
