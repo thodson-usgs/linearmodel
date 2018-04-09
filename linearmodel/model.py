@@ -17,7 +17,8 @@ from statsmodels.sandbox.regression.predstd import wls_prediction_std
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 from linearmodel import datamanager
-from linearmodel import stats as saidstats
+from linearmodel import stats as lmstats
+from linearmodel.util import HDFio
 
 
 TRANSFORM_VARIABLE_TEMPLATES = {None: 'x',
@@ -90,6 +91,32 @@ def get_exog_df(explanatory_df, explanatory_variables):
     return exog_df[ordered_exog_variables]
 
 
+def linear_model_ols_equal(ols_model_a, ols_model_b):
+    """Determine if instances of statsmodels.regression.linear_model.OLS are equal
+
+    :param ols_model_a:
+    :param ols_model_b:
+    :return:
+    """
+
+    if ols_model_a is None or ols_model_b is None:
+        if ols_model_a is None and ols_model_b is None:
+            models_equal = True
+        else:
+            models_equal = False
+    else:
+
+        exog_equal = np.array_equal(ols_model_a.exog, ols_model_b.exog)
+        endog_equal = np.array_equal(ols_model_a.endog, ols_model_b.endog)
+        exog_names_equal = ols_model_a.exog_names == ols_model_b.exog_names
+        endog_names_equal = ols_model_a.endog_names == ols_model_b.endog_names
+        formula_equal = ols_model_a.formula == ols_model_b.formula
+
+        models_equal = exog_equal and endog_equal and exog_names_equal and endog_names_equal and formula_equal
+
+    return models_equal
+
+
 class ModelException(Exception):
     """Exception base class for the model.py module."""
     pass
@@ -159,10 +186,11 @@ class LinearModel(abc.ABC):
         self._model_dataset = pd.DataFrame()
         self._model_data_origin = pd.DataFrame(columns=['variable', 'origin'])
 
+        # TODO: Determine if _variable_transform is used by any subclasses
         # initialize the variable transform dictionary
-        self._variable_transform = {}
-        for variable in variable_names:
-            self._variable_transform[variable] = None
+        # self._variable_transform = {}
+        # for variable in variable_names:
+        #     self._variable_transform[variable] = None
 
         # initialize the model attribute
         self._model = None
@@ -488,7 +516,7 @@ class OLSModel(LinearModel, abc.ABC):
         """
 
         res = self._model.fit()
-        plotting_position = saidstats.calc_plotting_position(res.resid, a=0.375)
+        plotting_position = lmstats.calc_plotting_position(res.resid, a=0.375)
         dist = stats.norm()
         normal_quantile = dist.ppf(plotting_position)
 
@@ -769,7 +797,7 @@ class OLSModel(LinearModel, abc.ABC):
 
                 transformed_variable_series = transform_function(raw_variable_series)
 
-                transform_quantiles = saidstats.calc_quantile(transformed_variable_series, q)
+                transform_quantiles = lmstats.calc_quantile(transformed_variable_series, q)
 
                 table_data[0].append(variable)
                 table_data[1].append(number_format_str.format(transform_quantiles[0]))
@@ -779,7 +807,7 @@ class OLSModel(LinearModel, abc.ABC):
                 table_data[5].append(number_format_str.format(transform_quantiles[3]))
                 table_data[6].append(number_format_str.format(transform_quantiles[4]))
 
-            quantiles = saidstats.calc_quantile(raw_variable_series, q)
+            quantiles = lmstats.calc_quantile(raw_variable_series, q)
 
             table_data[0].append(raw_variable_name)
             table_data[1].append(number_format_str.format(quantiles[0]))
@@ -1042,6 +1070,29 @@ class OLSModel(LinearModel, abc.ABC):
             ax.legend(loc='best')
 
         return ax
+
+    def equals(self, other):
+        """
+
+        :param other:
+        :return:
+        """
+
+        models_equal = True
+
+        for k, v in self.__dict__.items():
+            if hasattr(v, 'equals'):
+                attribute_equal = v.equals(other.__dict__[k])
+            elif k == '_model':
+                attribute_equal = linear_model_ols_equal(v, other.__dict__[k])
+            else:
+                attribute_equal = v == other.__dict__[k]
+            if not attribute_equal:
+                print(k + " is not equal")
+                models_equal = False
+                break
+
+        return models_equal
 
     def get_explanatory_variable_summary(self):
         """Get a table of summary statistics for the explanatory variables. The summary statistics include:
@@ -1372,6 +1423,55 @@ class OLSModel(LinearModel, abc.ABC):
 
         return predicted
 
+    @classmethod
+    def read_hdf(cls, path_or_buff, key):
+        """
+
+        :param path_or_buff:
+        :param key:
+        :return:
+        """
+
+        attribute_types = {'_response_variable': str,
+                           '_explanatory_variables': tuple,
+                           '_excluded_observations': pd.DatetimeIndex,
+                           '_data_manager': datamanager.DataManager}
+        if isinstance(path_or_buff, str):
+            with pd.HDFStore(path_or_buff) as store:
+                attributes = HDFio.read_hdf(store, attribute_types, key)
+        else:
+            attributes = HDFio.read_hdf(path_or_buff, attribute_types, key)
+
+        attributes.update({'_is_init': True})
+
+        result = cls.__new__(cls)
+
+        for name, value in attributes.items():
+            setattr(result, name, value)
+
+        result._update_model()
+
+        return result
+
+    def to_hdf(self, path_or_buff, key):
+        """
+
+        :param path_or_buff:
+        :param key:
+        :return:
+        """
+
+        attributes_to_save = ['_response_variable',
+                              '_explanatory_variables',
+                              '_excluded_observations',
+                              '_data_manager']
+        attributes_dict = {name: self.__dict__[name] for name in attributes_to_save}
+        if isinstance(path_or_buff, str):
+            with pd.HDFStore(path_or_buff) as store:
+                HDFio.to_hdf(store, attributes_dict, key)
+        else:
+            HDFio.to_hdf(path_or_buff, attributes_dict, key)
+
 
 class SimpleOLSModel(OLSModel):
     """Class for OLS simple linear regression (SLR) ratings."""
@@ -1627,7 +1727,7 @@ class MultipleOLSModel(OLSModel):
         X = model_exog[:, estimate_exog_columns]
         Y = model_exog[:, ~estimate_exog_columns]
 
-        Y_estimate = saidstats.ols_response_estimate(X, Y)
+        Y_estimate = lmstats.ols_response_estimate(X, Y)
 
         return Y_estimate
 
@@ -1656,7 +1756,7 @@ class MultipleOLSModel(OLSModel):
         X = model_exog[:, estimate_exog_columns]
         Y = self._model.endog
 
-        response_estimate = saidstats.ols_response_estimate(X, Y)
+        response_estimate = lmstats.ols_response_estimate(X, Y)
 
         return response_estimate
 
@@ -1725,7 +1825,7 @@ class MultipleOLSModel(OLSModel):
 
                 exog = sm.add_constant(adjusted_explanatory)
                 endog = adjusted_response
-                fit_line_response = saidstats.ols_response_estimate(exog, endog)
+                fit_line_response = lmstats.ols_response_estimate(exog, endog)
                 fit_line_x = [np.min(adjusted_explanatory), np.max(adjusted_explanatory)]
                 fit_line_y = [np.min(fit_line_response), np.max(fit_line_response)]
                 ax[i].plot(fit_line_x, fit_line_y, linestyle=':', color='black')

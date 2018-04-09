@@ -3,7 +3,7 @@ from datetime import timedelta
 import pandas as pd
 import numpy as np
 
-from linearmodel.util import CopyMixin, HDFMixin
+from linearmodel.util import CopyMixin, HDFio
 
 
 class DataException(Exception):
@@ -21,7 +21,7 @@ class ConcurrentObservationError(DataException):
     pass
 
 
-class DataManager(CopyMixin, HDFMixin):
+class DataManager(CopyMixin):
     """Class for data management."""
 
     _hdf_members = ['_data', '_data_origin']
@@ -515,29 +515,28 @@ class DataManager(CopyMixin, HDFMixin):
         return self.add_data_manager(matched_surrogate_data_manager)
 
     @classmethod
-    def read_hdf(cls, path_or_buf, key=None):
+    def read_hdf(cls, path_or_buf, key):
         """
 
         :param path_or_buf:
         :param key:
         :return:
         """
-        if key is None:
-            key = '/'
 
-        member_list = ['_data', '_data_origin']
-        # result = cls.__new__(cls)
-        if isinstance(path_or_buf, pd.HDFStore):
-            # for m in members:
-            #     member_key = key + '/' + m
-            #     setattr(result, m, pd.read_hdf(path_or_buf, member_key))
-            result = cls._read_hdf(member_list, path_or_buf, key)
-        else:
+        attribute_types = {'_data': pd,
+                           '_data_origin': pd}
+
+        if isinstance(path_or_buf, str):
             with pd.HDFStore(path_or_buf) as store:
-                # for m in members:
-                #     member_key = key + '/' + m
-                #     setattr(result, m, pd.read_hdf(store, member_key))
-                result = cls._read_hdf(member_list, store, key)
+                attributes = HDFio.read_hdf(store, attribute_types, key)
+        else:
+            attributes = HDFio.read_hdf(path_or_buf, attribute_types, key)
+
+        result = cls.__new__(cls)
+
+        for name, value in attributes.items():
+            setattr(result, name, value)
+
         return result
 
     @classmethod
@@ -563,14 +562,14 @@ class DataManager(CopyMixin, HDFMixin):
     def to_hdf(self, path_or_buf, key):
         """Write instance to an HDF file.
 
-        :param path_or_buf: The path to an HDF file
+        :param path_or_buf: The path to an HDF file or an open HDFStore instance
         :param key: Identifier for the group in the HDF file
         :return:
         """
 
-        hdf_dict = self.__dict__
+        attributes_dict = self.__dict__
         if isinstance(path_or_buf, str):
             with pd.HDFStore(path_or_buf) as store:
-                self._to_hdf(hdf_dict, store, key)
+                HDFio.to_hdf(store, attributes_dict, key)
         else:
-            self._to_hdf(hdf_dict, path_or_buf, key)
+            HDFio.to_hdf(path_or_buf, attributes_dict, key)

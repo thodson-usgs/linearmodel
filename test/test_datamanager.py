@@ -7,50 +7,9 @@ import numpy as np
 import pandas as pd
 
 from linearmodel.datamanager import DataManager
+from test.test_util import create_random_dataframe, create_linspace_dataframe
 
 current_path = os.path.dirname(os.path.realpath(__file__))
-
-
-def create_random_dataframe(number_of_rows=50):
-    variable_names = ['a', 'b', 'c', 'd', 'e']
-    data_size = (number_of_rows, 5)
-
-    data = np.random.normal(size=data_size)
-    data_df = pd.DataFrame(data=data, columns=variable_names)
-
-    return data_df
-
-
-def create_linspace_dataframe(data_start, data_stop, index_start, index_stop, columns, num_rows=6):
-
-    # initialize a list containing the data for the first column
-    data_list = [np.linspace(data_start, data_stop, num_rows)]
-
-    # create data for the second to the last columns
-    for i in range(1, len(columns)+1):
-        column_data = i*data_list[i-1][-1] + (i+1)*data_list[i-1]
-        data_list.append(column_data)
-
-    # create a DataFrame with the column data
-    data = dict(zip(columns, data_list))
-    df = pd.DataFrame.from_dict(data)
-
-    # add an index
-    # if a TypeError is received, assume the index is np.datetime64
-    try:
-        index = np.linspace(index_start, index_stop, num_rows)
-    except TypeError:
-        index_range = index_stop - index_start
-        datetime_step = index_range / (num_rows - 1)
-        index = index_start + np.arange(num_rows) * datetime_step
-
-    # set the index
-    df.set_index(index, inplace=True)
-
-    if isinstance(df.index, pd.DatetimeIndex):
-        df.index.name = 'DateTime'
-
-    return df
 
 
 class TestDataManagerGetData(unittest.TestCase):
@@ -93,7 +52,7 @@ class TestDataManagerGetData(unittest.TestCase):
         # get a linearly created DataFrame with twice the amount of rows, interpolate at the correct step, and
         # compare the results
         num_rows_2 = 2*num_rows_1 - 1
-        df2 = create_linspace_dataframe(data_start, data_stop, index_start, index_stop, columns, num_rows*2 - 1)
+        df2 = create_linspace_dataframe(data_start, data_stop, index_start, index_stop, columns, num_rows * 2 - 1)
         step_2 = (index_stop - index_start) / (num_rows_2 - 1)
         results_2 = dm.get_data(index_step=step_2)
 
