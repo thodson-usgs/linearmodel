@@ -972,7 +972,7 @@ class OLSModel(LinearModel, abc.ABC):
         plt.sca(ax)
         plt.axhline(color='black', ls='--')
 
-    def _plot_scatter_matrix(self, alpha=0.5, figsize=None, ax=None,
+    def _plot_scatter_matrix(self, ax=None, alpha=0.5, figsize=None,
                              diagonal='kde', pretty=True):
         """Make a scatter plot matrix among the variables
 
@@ -983,24 +983,29 @@ class OLSModel(LinearModel, abc.ABC):
         :param figsize:
         :param diagonal:
         """
-
+        response_variable = self._response_variable
+        response_variable_transform, raw_response_variable = self._find_raw_variable(response_variable)
         explanatory_df = self._model_dataset
-        response_variable = self.get_response_variable()
-        response_df  = explanatory_df[[response_variable]]
+        # format response
+        transform_func = self._transform_functions[response_variable_transform]
+        # transform response variable
+        response_df  = transform_func(explanatory_df[[raw_response_variable]])
+        # and rename the columns to reflect the transformation
+        response_df.rename(columns={raw_response_variable:response_variable}, inplace=True)
         exogenous_df = self._get_exogenous_matrix(explanatory_df)
-        #join exogenous variables and response variable
+        # join exogenous variables and response variable
         variable_df = response_df[[response_variable]].join(exogenous_df)
-        #omit the constant column from the plot
+        # omit the constant column from the plot
         variable_df.drop(labels='const', axis=1, inplace=True)
 
-        #make the scatter plot matrix
+        # make the scatter plot matrix
         sm = scatter_matrix(variable_df, alpha=alpha, figsize=figsize, ax=ax,
                             diagonal=diagonal)
         if pretty:
-            #rotate the labels
+            # rotate the labels
             [s.xaxis.label.set_rotation(45) for s in sm.reshape(-1)]
             [s.yaxis.label.set_rotation(45)  for s in sm.reshape(-1)]
-            #offset y label
+            # offset y label
             [s.get_yaxis().set_label_coords(-.5, 0.5) for s in sm.reshape(-1)]
 
     @staticmethod
@@ -1266,6 +1271,10 @@ class OLSModel(LinearModel, abc.ABC):
         elif plot_type is 'model_pred_vs_obs':
 
             self._plot_model_pred_vs_obs(ax)
+
+        elif plot_type is 'scatter_matrix':
+
+            self._plot_scatter_matrix(ax)
 
         else:
 
