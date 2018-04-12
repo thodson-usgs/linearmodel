@@ -79,7 +79,7 @@ class TestDataManagerGetData(unittest.TestCase):
         pd.testing.assert_frame_equal(dm.get_data(index_step=index_step), df2)
 
 
-class TestDataManagerUtil(unittest.TestCase):
+class TestDataManager(unittest.TestCase):
     """Test miscellaneous features of the DataManager class"""
 
     def setUp(self):
@@ -91,6 +91,21 @@ class TestDataManagerUtil(unittest.TestCase):
         fd, temp_hdf_path = tempfile.mkstemp(suffix='.h5')
         os.close(fd)
         self.temp_hdf_path = temp_hdf_path
+
+    def test_add_data_manager_simple(self):
+        """Test a simple case of DataManager.add_data_manager() usage"""
+
+        # create a data manager with random data
+        df = create_random_dataframe(number_of_rows=50)
+        dm = DataManager(df)
+
+        # split the data up and add the results together
+        dm1 = DataManager(df.iloc[:25])
+        dm2 = DataManager(df.iloc[25:])
+        dm_add_result = dm1.add_data_manager(dm2)
+
+        # test that the original data set and the add result are equal
+        self.assertTrue(dm.equals(dm_add_result))
 
     def test_deepcopy(self):
         """Test the deepcopy functionality of instances of the DataManager class"""
@@ -106,7 +121,7 @@ class TestDataManagerUtil(unittest.TestCase):
 
         self.assertTrue(df1.equals(df1))
 
-    def test_hdf_buf(self):
+    def test_to_hdf_buf(self):
         """Test the DataManager.to_hdf() and DataManager.read_hdf() methods when saving with a pd.HDFStore instance"""
 
         key = '/dm/'
@@ -123,7 +138,7 @@ class TestDataManagerUtil(unittest.TestCase):
 
         self.assertTrue(dm1.equals(dm2))
 
-    def test_hdf_path(self):
+    def test_to_hdf_path(self):
         """Test the DataManager.to_hdf() and DataManager.read_hdf() methods when saving with a file path"""
 
         key = '/dm'
@@ -197,6 +212,7 @@ class TestDataManagerInit(unittest.TestCase):
 
         # read the file into a DataFrame
         df = pd.read_table(test_data_file_path, sep='\t')
+        df.sort_index(axis=1, inplace=True)
 
         # make sure the DataManager's data and DataFrame are equal
         pd.testing.assert_frame_equal(data_manager.get_data(), df)
