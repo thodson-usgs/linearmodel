@@ -52,6 +52,7 @@ class DataManager(CopyMixin):
         self._check_origin(data, data_origin)
 
         self._data = data.copy(deep=True)
+        self._data.sort_index(axis=1, inplace=True)
         if isinstance(self._data.index, pd.DatetimeIndex):
             self._data.index.name = 'DateTime'
         self._data_origin = data_origin.copy(deep=True)
@@ -234,18 +235,18 @@ class DataManager(CopyMixin):
 
                 # fill the empty DataFrame with rows that are in the old DataFrame but not the new
                 old_index_diff = old_index.difference(new_index)
-                combined_df.ix[old_index_diff, variable] = old_df.ix[old_index_diff, variable]
+                combined_df.loc[old_index_diff, variable] = old_df.loc[old_index_diff, variable]
 
                 # fill the empty DataFrame with rows that are in the new DataFrame but not the old
                 new_index_diff = new_index.difference(old_index)
-                combined_df.ix[new_index_diff, variable] = new_df.ix[new_index_diff, variable]
+                combined_df.loc[new_index_diff, variable] = new_df.loc[new_index_diff, variable]
 
                 # handle the row intersection
                 index_intersect = old_index.intersection(new_index)
                 if keep_curr_obs:
-                    combined_df.ix[index_intersect, variable] = old_df.ix[index_intersect, variable]
+                    combined_df.loc[index_intersect, variable] = old_df.loc[index_intersect, variable]
                 else:
-                    combined_df.ix[index_intersect, variable] = new_df.ix[index_intersect, variable]
+                    combined_df.loc[index_intersect, variable] = new_df.loc[index_intersect, variable]
 
             elif variable in old_df.keys():
 
