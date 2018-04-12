@@ -16,10 +16,12 @@ from statsmodels.iolib.tableformatting import fmt_params
 from statsmodels.sandbox.regression.predstd import wls_prediction_std
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-from linearmodel import datamanager
+from linearmodel.datamanager import DataManager
 from linearmodel import stats as lmstats
 from linearmodel.util import HDFio
 
+
+# TODO: Implement variables class to handle variable checking, transformations, etc.
 
 TRANSFORM_VARIABLE_TEMPLATES = {None: 'x',
                                 'log': 'log(x)',
@@ -76,7 +78,7 @@ def get_exog_df(explanatory_df, explanatory_variables):
     number_of_observations = explanatory_df.shape[0]
     intercept_data = np.ones((number_of_observations, 1))
     intercept_column = ['Intercept']
-    exog_df = pd.DataFrame(data=intercept_data, columns=intercept_column)
+    exog_df = pd.DataFrame(data=intercept_data, columns=intercept_column, index=explanatory_df.index)
 
     # add all explanatory variables
     for variable_name in explanatory_variables:
@@ -139,13 +141,13 @@ class LinearModel(abc.ABC):
         """Initialize a RatingModel object.
 
         :param data_manager: Data manager containing response and explanatory variables.
-        :type data_manager: datamanager.DataManager
+        :type data_manager: DataManager
         :param response_variable:
         """
 
         self._is_init = False
 
-        if not isinstance(data_manager, datamanager.DataManager):
+        if not isinstance(data_manager, DataManager):
             raise TypeError("data_manager must be type data.DataManager")
 
         self._data_manager = copy.deepcopy(data_manager)
@@ -171,7 +173,8 @@ class LinearModel(abc.ABC):
 
         self._is_init = True
 
-    def _add_transformed_variables(self, variable, dataset):
+    @staticmethod
+    def _add_transformed_variables(variable, dataset):
         """
 
         :param variable:
@@ -194,8 +197,7 @@ class LinearModel(abc.ABC):
         """
         for variable in variable_names:
             if variable not in self._data_manager.get_variable_names():
-                raise InvalidModelVariableNameError("{} is not a valid variable name.".format(variable),
-                                                    variable)
+                raise ValueError("{} is not a valid variable name.".format(variable), variable)
 
     @abc.abstractmethod
     def _create_model(self):
@@ -241,28 +243,6 @@ class LinearModel(abc.ABC):
 
         return observation_table
 
-    def _get_transformed_variable_names(self, variables):
-
-        transformed_variable_names = []
-
-        for variable in variables:
-            variable_transform = self._variable_transform[variable]
-            transformed_variable = self.get_variable_transform_name(variable, variable_transform)
-            transformed_variable_names.append(transformed_variable)
-
-        return transformed_variable_names
-
-    def _get_variable_transform(self, variable):
-        """Return variable transformation.
-
-        :param variable:
-        :return:
-        """
-
-        self._check_variable_names([variable])
-
-        return self._variable_transform[variable]
-
     def _plot_predicted_vs_observed(self, ax):
         """
 
@@ -275,14 +255,10 @@ class LinearModel(abc.ABC):
         _, raw_response_name = find_raw_variable(self._response_variable)
 
         observed_response = self._data_manager.get_variable(raw_response_name)
-        observed_response = observed_response.ix[model_observation_index]
+        observed_response = observed_response.loc[model_observation_index]
         predicted_response = self.predict_response_variable(raw_response=True, bias_correction=True)
 
         ax.plot(observed_response, predicted_response[raw_response_name], '.', label='Observation')
-
-        # if (response_transform == 'log') or (response_transform == 'log10'):
-        #     ax.set_xscale('log')
-        #     ax.set_yscale('log')
 
         x_lim = ax.get_xlim()
 
@@ -1107,7 +1083,7 @@ class OLSModel(LinearModel, abc.ABC):
 
         # add estimated response
         _, raw_response_variable = find_raw_variable(self._response_variable)
-        explanatory_data = datamanager.DataManager(self._model_dataset.ix[model_data_index, :], self._model_data_origin)
+        explanatory_data = DataManager(self._model_dataset.ix[model_data_index, :], self._model_data_origin)
         predicted_response = self.predict_response_variable(explanatory_data=explanatory_data, raw_response=True,
                                                             bias_correction=True)
         estimated_response = predicted_response[raw_response_variable]
@@ -1303,7 +1279,7 @@ class OLSModel(LinearModel, abc.ABC):
         interval is returned.
 
         :param explanatory_data: Data manager containing explanatory variable data
-        :type explanatory_data: datamanager.DataManager
+        :type explanatory_data: DataManager
         :param bias_correction: Indicate whether or not to use bias correction
         :type bias_correction: bool
         :param raw_response
@@ -1324,14 +1300,17 @@ class OLSModel(LinearModel, abc.ABC):
         else:
             explanatory_df = self._data_manager.get_data()
             observation_index = res.resid.index
-            explanatory_df = explanatory_df.ix[observation_index]
+            try:
+                explanatory_df = explanatory_df.loc[observation_index]
+            except KeyError:
+                explanatory_df = explanatory_df.iloc[observation_index]
 
+        # predict the mean response variable
         exog = self._get_exogenous_matrix(explanatory_df)
-
-        # predicted response variable
         mean_response = self._model.predict(res.params, exog=exog)
         mean_response = np.expand_dims(mean_response, axis=1)
 
+        # if a raw response is requested, find the transform and name
         if raw_response:
             response_variable_transform, response_name = find_raw_variable(self._response_variable)
         else:
@@ -1380,8 +1359,9 @@ class OLSModel(LinearModel, abc.ABC):
 
         predicted = pd.DataFrame(data=predicted_data, index=explanatory_df.index, columns=columns)
 
-        raw_explanatory_variables = [raw_variable for _, raw_variable in
-                                     [find_raw_variable(expln_var) for expln_var in self._explanatory_variables]]
+        raw_explanatory_variables = list(set([raw_variable for _, raw_variable in
+                                             [find_raw_variable(expln_var) for expln_var in
+                                              self._explanatory_variables]]))
 
         predicted = predicted.join(explanatory_df[raw_explanatory_variables], how='outer')
 
@@ -1399,7 +1379,7 @@ class OLSModel(LinearModel, abc.ABC):
         attribute_types = {'_response_variable': str,
                            '_explanatory_variables': tuple,
                            '_excluded_observations': pd.DatetimeIndex,
-                           '_data_manager': datamanager.DataManager}
+                           '_data_manager': DataManager}
         if isinstance(path_or_buff, str):
             with pd.HDFStore(path_or_buff) as store:
                 attributes = HDFio.read_hdf(store, attribute_types, key)
@@ -1780,15 +1760,15 @@ class MultipleOLSModel(OLSModel):
         :return:
         """
 
-        base_variable_names = []
+        raw_variable_names = []
 
         for variable in variables:
 
             variable_transform, raw_variable = find_raw_variable(variable)
-            base_variable_names.append(raw_variable)
+            raw_variable_names.append(raw_variable)
             self.check_transform(variable_transform)
 
-        self._check_variable_names(base_variable_names)
+        self._check_variable_names(raw_variable_names)
 
         self._explanatory_variables = tuple(variables)
 
@@ -1831,9 +1811,8 @@ class ComplexOLSModel(MultipleOLSModel):
             if raw_explanatory_variable is None:
                 raw_explanatory_variable = raw_variable
             elif raw_variable != raw_explanatory_variable:
-                raise ValueError("{0} is not a transformation of {1}. "
-                                 + "Only one non-transformed variable allowed.".format(raw_variable,
-                                                                                       raw_explanatory_variable))
+                raise ValueError("{} is not a transformation of {}. ".format(raw_variable, raw_explanatory_variable)
+                                 + "Only one non-transformed variable allowed.")
 
     def plot(self, plot_type='variable_scatter', ax=None, add_legend=True):
         """
@@ -1878,7 +1857,8 @@ class ComplexOLSModel(MultipleOLSModel):
 
             # get the inversely transformed fitted response variable and confidence intervals
             y_fit, l_ci, u_ci = self._get_model_confidence_mean(exog_fit)
-            response_variable_transform = self._get_variable_transform(response_variable)
+            response_variable_transform, _ = find_raw_variable(response_variable)
+            # response_variable_transform = self._get_variable_transform(response_variable)
             response_inverse_func = INVERSE_TRANSFORM_FUNCTIONS[response_variable_transform]
             y_fit = response_inverse_func(y_fit)
             l_ci = response_inverse_func(l_ci)
@@ -1906,30 +1886,116 @@ class ComplexOLSModel(MultipleOLSModel):
 class CompoundLinearModel(LinearModel):
     """"""
 
-    def __init__(self, data_manager, response_variable=None, explanatory_variable=None):
+    def __init__(self, data_manager, response_variable=None, explanatory_variables=None, break_points=None):
+        """CompoundLinearModel contains multiple ComplexLinearModel instances.
 
+        The number of ComplexLinearModels is determined by the number of break points.
+
+        explanatory_variables is a list or tuple of lists or tuples defining the explanatory variables used in the model
+        segments. For example, in a two-segment model with the lower domain of x fitted to a quadratic linear model and
+        the upper domain of x fitted to a linear model, explanatory_variables would be  [['x', 'power(x, 2)'], ['x']].
+
+        break_points is a list or tuple containing break points in the model. Break points set the limits on the
+        explanatory domains of the model segments. For example, in a two-segment model with the lower domain model
+        that has an upper exclusive limit of 10 and the upper domain model that has a lower inclusive limit of 10,
+        break_points would be [10].
+
+        The number of model segments (N_ms) is the number of break points (N_bp) plus one. This means
+        len(explanatory_variables) must be equal to len(break_points)+1.
+
+        If response_variable is None, the first variable that DataManager.get_variable_names() returns will be used as
+        the response variable.
+
+        If explanatory_variables is None, the first non-response variable DataManager.get_variable_names() returns is
+        used as the explanatory variable.
+
+        If explanatory_variables is not None and break_points is None, one model segment with the domain (-Inf, Inf)
+        will be initialized with explanatory_variables[0] as the explanatory variables.
+
+        If explanatory_variables is None and break_points is not, N_ms model segments will be initialized using the
+        first non-response variable DataManager.get_variable_names() returns.
+
+        There may only be one "raw" explanatory variable included in the model. For example, explanatory_variables may
+        be [['x', 'log10(x)']] but not [['x', 'log10(y)']].
+
+        :param data_manager: DataManager containing data for the model
+        :type data_manager: DataManager
+        :param response_variable:
+        :type response_variable: str
+        :param explanatory_variables: List or tuple containing lists of explanatory variables for each model segment
+        :type explanatory_variables: list or tuple
+        :param break_points: List or tuple containing n break_points
+        :type break_points: list or tuple
+        """
+
+        # initialize the super class
         super().__init__(data_manager, response_variable)
 
-        self._explanatory_variable_transform = [[None]]
-
-        self._breakpoints = np.array([-np.inf, np.inf])
-
+        # initialize the explanatory variable transforms, break_points, and models
+        self._explanatory_variables = []  # list to contain the raw explanatory variable
+        self._segment_explanatory_variables = []  # list containing explanatory variables for the segments
+        self._break_points = np.array([-np.inf, np.inf])
         self._model = []
 
-        if explanatory_variable:
-            self.set_explanatory_variable(explanatory_variable)
-        else:
-            self.set_explanatory_variable(data_manager.get_variable_names()[1])
+        self._is_init = False
 
-    def _check_segment_number(self, segment_number):
+        if explanatory_variables and break_points:
+            if len(explanatory_variables) != len(break_points)+1:
+                raise ValueError("len(explanatory_variables) must be equal to len(break_points) + 1")
+
+        # if explanatory_variables is not defined, get the eligible explanatory variables and use the first to
+        # initialize the model
+        if explanatory_variables is None:
+
+            # get the first non-response variable and use it to set the explanatory variables
+            response_variable = self.get_response_variable()
+            variable_names = data_manager.get_variable_names()
+            _, raw_response_variable = find_raw_variable(response_variable)
+            eligible_explanatory_variables = [var for var in variable_names if var != raw_response_variable]
+            explanatory_variables = [[eligible_explanatory_variables[0]]]
+
+            # if explanatory_variables is not specified but break_points, create a list of lists
+            if break_points is not None:
+                explanatory_variables = explanatory_variables * (len(break_points) + 1)
+
+        # set the explanatory variables
+        self.set_explanatory_variables(explanatory_variables)
+
+        # set the break points if break_points is not not
+        if break_points is not None:
+            self.set_break_points(break_points)
+
+        # set the initialization flag and initialize the model
+        self._is_init = True
+        self._update_model()
+
+    def _check_explanatory_variables(self, explanatory_variables):
+        """Checks a list of explanatory variables for a single raw explanatory variable.
+
+        Raises ValueError on finding more than one raw explanatory variables.
+
+        :param explanatory_variables: List of explanatory variables
+        :return: Raw explanatory variable
         """
 
-        :param segment:
-        :return:
-        """
+        raw_explanatory_variable = None
 
-        if not 0 < segment_number and segment_number <= len(self._model):
-            raise ValueError("Invalid segment number.")
+        # make sure the raw explanatory variable is consistent among transformations
+        for variable in explanatory_variables:
+            transform, raw_variable = find_raw_variable(variable)
+            self.check_transform(transform)
+            self._check_variable_names([raw_variable])
+            if raw_explanatory_variable is None:
+                raw_explanatory_variable = raw_variable
+            elif raw_variable != raw_explanatory_variable:
+                raise ValueError("{} is not a transformation of {}.".format(raw_variable, raw_explanatory_variable))
+
+        # make sure the raw explanatory variable is not the raw response variable
+        _, raw_response_variable = find_raw_variable(self.get_response_variable())
+        if raw_explanatory_variable == raw_response_variable:
+            raise ValueError("Raw explanatory variable cannot be raw response variable")
+
+        return raw_explanatory_variable
 
     def _create_model(self):
         """
@@ -1937,79 +2003,50 @@ class CompoundLinearModel(LinearModel):
         :return:
         """
 
+        # set the model to an empty list
         self._model = []
 
+        # for all segments
         for i in range(self.get_number_of_segments()):
-            lower_bound = self._breakpoints[i]
-            upper_bound = self._breakpoints[i + 1]
 
-            segment_range_index = (self._model_dataset.ix[:, self._explanatory_variables[0]] >= lower_bound) & \
-                                  (self._model_dataset.ix[:, self._explanatory_variables[0]] < upper_bound)
+            # get the range of the upper and lower bounds
+            lower_bound = self._break_points[i]
+            upper_bound = self._break_points[i + 1]
+            segment_range_index = (self._model_dataset.loc[:, self._explanatory_variables[0]] >= lower_bound) & \
+                                  (self._model_dataset.loc[:, self._explanatory_variables[0]] < upper_bound)
 
+            # create a data manager for each segment
             origin_data = []
             for variable in self._response_variable, self._explanatory_variables[0]:
                 for origin in self._data_manager.get_variable_origin(variable):
                     origin_data.append([variable, origin])
             model_data_origin = pd.DataFrame(data=origin_data, columns=['variable', 'origin'])
 
-            segment_data_manager = datamanager.DataManager(self._model_dataset.ix[segment_range_index, :],
-                                                           model_data_origin)
+            segment_data_manager = DataManager(self._model_dataset.loc[segment_range_index, :], model_data_origin)
 
+            # create models for every segment
             segment_model = ComplexOLSModel(segment_data_manager,
                                             response_variable=self.get_response_variable(),
-                                            explanatory_variable=self.get_explanatory_variable())
+                                            explanatory_variables=self._segment_explanatory_variables[i])
             segment_model.exclude_observation(self.get_excluded_observations())
 
             self._model.append(segment_model)
 
-    def add_breakpoint(self, new_breakpoint):
-        """Add a breakpoint to separate linear models.
-
-        :param new_breakpoint: Value of explanatory variable to set a breakpoint
-        :type new_breakpoint: abc.Numeric
-        :return:
-        """
-
-        breakpoints = np.append(self._breakpoints, new_breakpoint)
-        breakpoints = breakpoints[~np.isnan(breakpoints)]
-        self._breakpoints = np.sort(breakpoints)
-
-        self.reset_explanatory_var_transform()
-
-        self._create_model()
-
-    def add_explanatory_var_transform(self, transform, segment=None):
-        """Adds an explanatory variable transformation to a segment model
-
-        :param segment:
-        :param transform:
-        :return:
-        """
-
-        self.check_transform(transform)
-
-        if segment:
-            self._check_segment_number(segment)
-            self._model[segment - 1].add_explanatory_var_transform(transform)
-        else:
-            for segment_model in self._model:
-                segment_model.add_explanatory_var_transform(transform)
-
-    def get_breakpoints(self):
-        """Returns the current breakpoints used in the model
+    def get_break_points(self):
+        """Returns the current break_points used in the model
 
         :return:
         """
 
-        return copy.deepcopy(self._breakpoints)
+        return copy.deepcopy(self._break_points)
 
-    def get_explanatory_variable(self):
-        """Returns the explanatory variable used in the SLR
+    def get_explanatory_variables(self):
+        """Returns the explanatory variable used in the model segments
 
         :return:
         """
 
-        return self._explanatory_variables[0]
+        return [list(explanatory_variables) for explanatory_variables in self._segment_explanatory_variables]
 
     def get_model_dataset(self):
         """Returns a pandas DataFrame containing the following columns:
@@ -2041,25 +2078,16 @@ class CompoundLinearModel(LinearModel):
 
         return model_dataset
 
-    def get_model_formula(self, segment=None):
+    def get_model_formula(self):
         """Return the formula of the model
 
-        :param segment:
         :return:
         """
 
-        if segment:
+        model_formula = []
 
-            self._check_segment_number(segment)
-
-            model_formula = self._model[segment - 1].get_model_formula()
-
-        else:
-
-            model_formula = []
-
-            for segment_model in self._model:
-                model_formula.append(segment_model.get_model_formula())
+        for segment_model in self._model:
+            model_formula.append(segment_model.get_model_formula())
 
         return model_formula
 
@@ -2075,8 +2103,8 @@ class CompoundLinearModel(LinearModel):
         """
         model_report = self._model[0].get_model_report()
 
-        lower_bound = self._FLOAT_STRING_FORMAT.format(self._breakpoints[0])
-        upper_bound = self._FLOAT_STRING_FORMAT.format(self._breakpoints[1])
+        lower_bound = self._FLOAT_STRING_FORMAT.format(self._break_points[0])
+        upper_bound = self._FLOAT_STRING_FORMAT.format(self._break_points[1])
         report_title = 'Segment model range: ' \
                        + lower_bound \
                        + ' <= ' + self._explanatory_variables[0] \
@@ -2089,8 +2117,8 @@ class CompoundLinearModel(LinearModel):
 
         for i in range(1, number_of_segments):
             segment_model_report = self._model[i].get_model_report()
-            lower_bound = self._FLOAT_STRING_FORMAT.format(self._breakpoints[i])
-            upper_bound = self._FLOAT_STRING_FORMAT.format(self._breakpoints[i + 1])
+            lower_bound = self._FLOAT_STRING_FORMAT.format(self._break_points[i])
+            upper_bound = self._FLOAT_STRING_FORMAT.format(self._break_points[i + 1])
             report_title = 'Segment model range: ' \
                            + lower_bound \
                            + ' <= ' + self._explanatory_variables[0] \
@@ -2107,8 +2135,8 @@ class CompoundLinearModel(LinearModel):
         """
 
         summary = self._model[0].get_model_summary()
-        lower_bound = self._FLOAT_STRING_FORMAT.format(self._breakpoints[0])
-        upper_bound = self._FLOAT_STRING_FORMAT.format(self._breakpoints[1])
+        lower_bound = self._FLOAT_STRING_FORMAT.format(self._break_points[0])
+        upper_bound = self._FLOAT_STRING_FORMAT.format(self._break_points[1])
         summary_title = 'Segment model range: ' \
                         + lower_bound \
                         + ' <= ' + self._explanatory_variables[0] \
@@ -2121,8 +2149,8 @@ class CompoundLinearModel(LinearModel):
 
         for i in range(1, number_of_segments):
             segment_model_summary = self._model[i].get_model_summary()
-            lower_bound = self._FLOAT_STRING_FORMAT.format(self._breakpoints[i])
-            upper_bound = self._FLOAT_STRING_FORMAT.format(self._breakpoints[i + 1])
+            lower_bound = self._FLOAT_STRING_FORMAT.format(self._break_points[i])
+            upper_bound = self._FLOAT_STRING_FORMAT.format(self._break_points[i + 1])
             summary_title = 'Segment model range: ' \
                             + lower_bound \
                             + ' <= ' + self._explanatory_variables[0] \
@@ -2138,7 +2166,7 @@ class CompoundLinearModel(LinearModel):
         :return:
         """
 
-        return len(self._breakpoints) - 1
+        return len(self._break_points) - 1
 
     def plot(self, plot_type='variable_scatter', ax=None):
         """
@@ -2171,84 +2199,6 @@ class CompoundLinearModel(LinearModel):
 
             self._model[i].plot(ax=ax, plot_type=plot_type, add_legend=add_legend)
 
-    def remove_breakpoint(self, breakpoint):
-        """Removed the specified breakpoint
-
-        :param breakpoint:
-        :return:
-        """
-
-        new_breakpoints = self._breakpoints[~(self._breakpoints == breakpoint)]
-        if np.inf not in new_breakpoints:
-            new_breakpoints = np.append(new_breakpoints, np.inf)
-        if -np.inf not in new_breakpoints:
-            new_breakpoints = np.append(new_breakpoints, -np.inf)
-
-        self._breakpoints = np.sort(new_breakpoints)
-
-        self.reset_explanatory_var_transform()
-
-        self._create_model()
-
-    def remove_explanatory_var_transform(self, transform, segment=None):
-        """Remove the specified explanatory variable transformation
-
-        :param segment:
-        :param transform:
-        :return:
-        """
-
-        if segment:
-            self._check_segment_number(segment)
-            self._model[segment - 1].remove_explanatory_var_transform(transform)
-
-        else:
-
-            for segment_model in self._model:
-                segment_model.remove_explanatory_var_transform(transform)
-
-    def reset_breakpoints(self):
-        """Reset the breakpoints in the model to -inf and +inf
-
-        :return:
-        """
-
-        self._breakpoints = [-np.inf, np.inf]
-
-        self.reset_explanatory_var_transform()
-
-        self._create_model()
-
-    def reset_explanatory_var_transform(self, segment=None):
-        """Remove all transformations of explanatory variables
-
-        :param segment:
-        :return:
-        """
-
-        if segment:
-
-            self._check_segment_number(segment)
-
-            self._model[segment - 1].reset_explanatory_var_transform()
-
-        else:
-
-            for segment_model in self._model:
-                segment_model.reset_explanatory_var_transform()
-
-    def set_explanatory_variable(self, explanatory_variable):
-        """Set the explanatory variable for the model
-
-        :param explanatory_variable:
-        :return:
-        """
-
-        self._check_variable_names([explanatory_variable])
-        self._explanatory_variables = (explanatory_variable,)
-
-        self._update_model()
-
     def predict_response_variable(self, **kwargs):
         """Predict the response variable using the current model
 
@@ -2269,20 +2219,117 @@ class CompoundLinearModel(LinearModel):
             explanatory_df = self._model_dataset.copy(deep=True)
             explanatory_origin = self._model_data_origin.copy(deep=True)
 
-        explanatory_series = explanatory_df[self.get_explanatory_variable()]
+        explanatory_series = explanatory_df[self._explanatory_variables[0]]
 
         bias_correction = kwargs.pop('bias_correction', False)
         prediction_interval = kwargs.pop('prediction_interval', False)
 
         for i in range(self.get_number_of_segments()):
-            lower_bound = self._breakpoints[i]
-            upper_bound = self._breakpoints[i + 1]
+            lower_bound = self._break_points[i]
+            upper_bound = self._break_points[i + 1]
             segment_index = (lower_bound <= explanatory_series) & (explanatory_series < upper_bound)
-            predictor_data_manager = datamanager.DataManager(explanatory_df.ix[segment_index, :],
-                                                             explanatory_origin)
+            predictor_data_manager = DataManager(explanatory_df.ix[segment_index, :], explanatory_origin)
             segment_predicted = self._model[i].predict_response_variable(explanatory_data=predictor_data_manager,
                                                                          bias_correction=bias_correction,
                                                                          prediction_interval=prediction_interval)
             predicted = pd.concat([predicted, segment_predicted])
 
         return predicted
+
+    def reset_break_points(self):
+        """Reset the break_points in the model to -inf and +inf. Reduces the segment count to one. Set the explanatory
+        variables to the variables used in the first segment.
+
+        :return:
+        """
+
+        self._break_points = np.array([-np.inf, np.inf])
+
+        explanatory_variables = self.get_explanatory_variables()
+        self.set_explanatory_variables(explanatory_variables[0])
+
+        self._create_model()
+
+    def set_break_points(self, break_points):
+        """Set the break points defining the limits of the model segments.
+
+        break_points is an array-like object containing numerical types that define limits.
+
+        If len(break_points) == 1, two model segments will be initialized. The first will have domain limits of
+        (-Inf, break_points[0]) and the second will have domain limits of [break_points[0], Inf)
+
+        :param break_points:
+        :return:
+        """
+
+        old_number_of_segments = self.get_number_of_segments()
+
+        # convert break_points to an np.ndarray, set it to _break_points, add infinity bounds, and sort it
+        break_points = np.array(break_points, dtype=np.float64)
+        self._break_points = np.append(np.array([-np.inf, np.inf]), break_points)
+        self._break_points.sort()
+
+        if self._is_init:
+
+            new_number_of_segments = self.get_number_of_segments()
+            old_segment_explan_vars = self.get_explanatory_variables()
+
+            # if the number of segments was reduced, trim the segment explanatory variables
+            if new_number_of_segments < old_number_of_segments:
+                new_segment_explan_vars = old_segment_explan_vars[:new_number_of_segments]
+                self.set_explanatory_variables(new_segment_explan_vars)
+
+            # if the number of segments increased, set the explanatory variables for the new segments to the raw
+            # explanatory variable
+            elif new_number_of_segments > old_number_of_segments:
+                segment_num_diff = new_number_of_segments - old_number_of_segments
+                additional_seg_vars = [self._explanatory_variables[0]] * segment_num_diff
+                new_segment_explan_vars = old_segment_explan_vars
+                new_segment_explan_vars.extend(additional_seg_vars)
+                self.set_explanatory_variables(new_segment_explan_vars)
+
+            assert len(self.get_explanatory_variables()) == self.get_number_of_segments()
+
+            self._update_model()
+
+    def set_explanatory_variables(self, explanatory_variables):
+        """Set the explanatory variables for the model segments.
+
+        explanatory_variables is a list or tuple containing lists or tuples of explanatory variables for the segments.
+        len(explanatory_variables) must be equal to the number of model segments. For an example of a two segment model,
+        explanatory_variables can be [['x', 'log10(x)'], ['x']].
+
+        Only one "raw" explanatory variable is allowed. For example, [['x', 'log10(x)'] is valid, but ['x', 'log10(y)']
+        is not.
+
+        :param explanatory_variables: Explanatory variables for the model segments
+        :return:
+        """
+
+        if self._is_init:
+            # make sure the number of explanatory variable sets is equal to the number of model segments
+            # (set break points before setting explanatory variables)
+            if len(explanatory_variables) != self.get_number_of_segments():
+                raise ValueError("The number of explanatory variable sets must be equal to the number of "
+                                 "model segments")
+
+        raw_explanatory_variable = None
+
+        # check the validity of the variable sets
+        # make sure there is one raw explanatory variable across the segments
+        for model_segment_explanatory_variables in explanatory_variables:
+            segment_raw_explan_var = self._check_explanatory_variables(model_segment_explanatory_variables)
+            if raw_explanatory_variable is None:
+                raw_explanatory_variable = segment_raw_explan_var
+            else:
+                if segment_raw_explan_var != segment_raw_explan_var:
+                    raise ValueError("The raw explanatory variable must be consistent among all model segments.")
+
+        self._explanatory_variables = [raw_explanatory_variable]
+
+        # set the explanatory variables to a tuple of tuples
+        self._segment_explanatory_variables = tuple([tuple(segment_explanatory_variables) for
+                                                     segment_explanatory_variables in explanatory_variables])
+
+        if self._is_init:
+            self._update_model()
