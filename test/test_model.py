@@ -203,7 +203,7 @@ class TestCompoundLinearModel(TestModel):
     class_test_case_parameters = {'test_class': CompoundLinearModel}
 
     @staticmethod
-    def _create_compound_test_data_set(response_variable, explanatory_variables, explanatory_ranges):
+    def create_compound_test_data_set(response_variable, explanatory_variables, explanatory_ranges):
         """Create a test data set for CompoundLinearModel"""
 
         number_of_obs = 10
@@ -239,11 +239,11 @@ class TestCompoundLinearModel(TestModel):
         model.set_break_points(10)
         model.get_model_report()
 
-        self._save_test_case_data(model)
+        # self._save_test_case_data(model)
 
     def test_predict_response_variable_non_transformed_response(self):
         """Test CompoundLinearModel.predict_response_variable() with a non-transformed response variable"""
-        test_set = self._create_compound_test_data_set('w', [['x', 'sqrt(x)'], ['x']], [(0, 10), (10, 20)])
+        test_set = self.create_compound_test_data_set('w', [['x', 'sqrt(x)'], ['x']], [(0, 10), (10, 20)])
         model = CompoundLinearModel(test_set)
         model.set_break_points([10])
         model.set_explanatory_variables([['x', 'sqrt(x)'], ['x']])
@@ -647,6 +647,17 @@ class TestOLSModelHDF(unittest.TestCase):
         fd, temp_hdf_path = tempfile.mkstemp(suffix='.h5')
         os.close(fd)
         self.temp_hdf_path = temp_hdf_path
+
+    def test_compoundlinearmodel_hdf(self):
+        """Test the functionality of the CompoundLinearModel.to_hdf() and read_hdf() methods"""
+        key = '/CompoundLinearModelHDFtest'
+        data = TestCompoundLinearModel.create_compound_test_data_set('y', [['x', 'sqrt(x)'], ['x']],
+                                                                     [(0, 10), (10, 20)])
+        model = CompoundLinearModel(data, response_variable='y', explanatory_variables=[['x', 'sqrt(x)'], ['x']],
+                                    break_points=[10])
+        model.to_hdf(self.temp_hdf_path, key)
+        model_from_hdf = CompoundLinearModel.read_hdf(self.temp_hdf_path, key)
+        self.assertTrue(model.equals(model_from_hdf))
 
     def test_complexolsmodel_hdf(self):
         """Test the functionality of the ComplexOLSModel.to_hdf() and read_hdf() methods"""
