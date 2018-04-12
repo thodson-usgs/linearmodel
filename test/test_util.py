@@ -47,19 +47,22 @@ def create_linspace_dataframe(data_start, data_stop, index_start, index_stop, co
     return df
 
 
-def create_linear_model_test_data_set(response_variable, explanatory_variables, number_of_obs=50):
+def create_linear_model_test_data_set(response_variable, explanatory_variables,
+                                      number_of_obs=50, explanatory_range=(0.01, 10)):
     """
 
     :param response_variable:
     :param explanatory_variables:
     :param number_of_obs:
+    :param explanatory_range:
     :return:
     """
 
     # find the raw explanatory variables and create a random DataFrame with the number of raw explanatory variables
     raw_explanatory_variables = list(set([raw_var for _, raw_var in
                                           [find_raw_variable(var) for var in explanatory_variables]]))
-    explanatory_data = np.random.uniform(0.01, 10, size=(number_of_obs, len(raw_explanatory_variables)))
+    explanatory_data = np.random.uniform(explanatory_range[0], explanatory_range[1],
+                                         size=(number_of_obs, len(raw_explanatory_variables)))
     explanatory_df = pd.DataFrame(data=explanatory_data, columns=raw_explanatory_variables)
 
     # get an exogenous DataFrame to calculate the response variable
