@@ -14,6 +14,6 @@ setup(
         'Intended Audience :: Developers',
         'Programming Language :: Python 3.6'
     ],
-    python_requires='>=3', 
-	install_requires=['matplotlib', 'numpy', 'pandas', 'statsmodels', 'scipy']
+    python_requires='>=3',
+    install_requires=['matplotlib', 'numpy', 'pandas', 'statsmodels', 'scipy', 'pytables']
 )

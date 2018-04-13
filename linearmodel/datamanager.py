@@ -1,8 +1,9 @@
-import copy
 from datetime import timedelta
 
 import pandas as pd
 import numpy as np
+
+from linearmodel.util import CopyMixin, HDFio
 
 
 class DataException(Exception):
@@ -20,11 +21,10 @@ class ConcurrentObservationError(DataException):
     pass
 
 
-class DataManager:
-    """Base class for data subclasses.
+class DataManager(CopyMixin):
+    """Class for data management."""
 
-    This class provides methods for data management subclasses.
-    """
+    _hdf_members = ['_data', '_data_origin']
 
     def __init__(self, data, data_origin=None):
         """Initialize a Data object.
@@ -52,15 +52,10 @@ class DataManager:
         self._check_origin(data, data_origin)
 
         self._data = data.copy(deep=True)
+        self._data.sort_index(axis=1, inplace=True)
+        if isinstance(self._data.index, pd.DatetimeIndex):
+            self._data.index.name = 'DateTime'
         self._data_origin = data_origin.copy(deep=True)
-
-    def __deepcopy__(self, memo):
-        cls = self.__class__
-        result = cls.__new__(cls)
-        memo[id(self)] = result
-        for k, v, in self.__dict__.items():
-            setattr(result, k, copy.deepcopy(v, memo))
-        return result
 
     def _check_for_concurrent_obs(self, other):
         """Check other DataManager for concurrent observations of a variable. Raise ConcurrentObservationError if
@@ -142,7 +137,7 @@ class DataManager:
         :return: 
         """
 
-        origin = cls.create_data_origin(data, np.NaN)
+        origin = cls.create_data_origin(data, [np.NaN])
 
         return origin
 
@@ -160,6 +155,7 @@ class DataManager:
         # Check the formatting of the date/time columns. If one of the correct formats is used, reformat
         # those date/time columns into a new timestamp column. If none of the correct formats are used,
         # return an invalid file format error to the user.
+        date_time_column_present = True
         if 'y' and 'm' and 'd' and 'H' and 'M' and 'S' in tab_delimited_df.columns:
             tab_delimited_df.rename(columns={"y": "year", "m": "month", "d": "day"}, inplace=True)
             tab_delimited_df.rename(columns={"H": "hour", "M": "minute", "S": "second"}, inplace=True)
@@ -173,12 +169,14 @@ class DataManager:
             tab_delimited_df.rename(columns={"Date": "DateTime"}, inplace=True)
             tab_delimited_df.drop(["Time"], axis=1, inplace=True)
         elif 'DateTime' in tab_delimited_df.columns:
-            # tab_delimited_df.rename(columns={"DateTime": "Timestamp"}, inplace=True)
             tab_delimited_df["DateTime"] = pd.to_datetime(tab_delimited_df["DateTime"], errors="coerce")
         else:
-            raise ValueError("Date and time information is incorrectly formatted.", file_path)
+            # raise ValueError("Date and time information is incorrectly formatted.", file_path)
+            date_time_column_present = False
 
-        tab_delimited_df.set_index("DateTime", drop=True, inplace=True)
+        if date_time_column_present:
+            tab_delimited_df.set_index("DateTime", drop=True, inplace=True)
+
         tab_delimited_df = tab_delimited_df.apply(pd.to_numeric, args=('coerce', ))
 
         return tab_delimited_df
@@ -237,18 +235,18 @@ class DataManager:
 
                 # fill the empty DataFrame with rows that are in the old DataFrame but not the new
                 old_index_diff = old_index.difference(new_index)
-                combined_df.ix[old_index_diff, variable] = old_df.ix[old_index_diff, variable]
+                combined_df.loc[old_index_diff, variable] = old_df.loc[old_index_diff, variable]
 
                 # fill the empty DataFrame with rows that are in the new DataFrame but not the old
                 new_index_diff = new_index.difference(old_index)
-                combined_df.ix[new_index_diff, variable] = new_df.ix[new_index_diff, variable]
+                combined_df.loc[new_index_diff, variable] = new_df.loc[new_index_diff, variable]
 
                 # handle the row intersection
                 index_intersect = old_index.intersection(new_index)
                 if keep_curr_obs:
-                    combined_df.ix[index_intersect, variable] = old_df.ix[index_intersect, variable]
+                    combined_df.loc[index_intersect, variable] = old_df.loc[index_intersect, variable]
                 else:
-                    combined_df.ix[index_intersect, variable] = new_df.ix[index_intersect, variable]
+                    combined_df.loc[index_intersect, variable] = new_df.loc[index_intersect, variable]
 
             elif variable in old_df.keys():
 
@@ -309,12 +307,66 @@ class DataManager:
 
         return type(self)(data, data_origin)
 
-    def get_data(self):
-        """Return a copy of the time series data contained within the manager.
-
-        :return: Copy of the data being managed in a DataFrame
+    def equals(self, other):
         """
-        return self._data.copy(deep=True)
+
+        :param other:
+        :return:
+        """
+
+        data_self = self.get_data()
+        data_other = other.get_data()
+
+        data_origin_self = self.get_origin()
+        data_origin_other = other.get_origin()
+
+        return data_self.equals(data_other) and data_origin_self.equals(data_origin_other)
+
+    def get_data(self, index_step=None, interpolate_index=None):
+        """Returns a Pandas DataFrame containing managed data.
+
+        If step is specified, the returned DataFrame is interpolated on the frequency between the first and
+        last times in the managed data time range.
+
+        If index is specified, the returned DataFrame is interpolated on the indices.
+
+        If step and index are specified, index will be resampled with the frequency given by step.
+
+        :param index_step:
+        :param interpolate_index:
+        :return:
+        """
+
+        # get a copy of the contained DataFrame
+        variable_names = self.get_variable_names()
+        df = self._data[variable_names]
+
+        # resample_index or index is specified
+        if interpolate_index is not None or index_step is not None:
+
+            # if resample_index isn't specified, set it to the internal data index
+            if interpolate_index is None:
+                interpolate_index = self._data.index
+
+            # if index_step is specified, get a new resample_index based on the step
+            if index_step is not None:
+                interpolate_index = np.array(interpolate_index)
+                index_range = interpolate_index[-1] - interpolate_index[0]
+                num_index = int(index_range / index_step) + 1
+                interpolate_index = interpolate_index[0] + np.arange(num_index) * index_step
+                interpolate_index = pd.Index(interpolate_index)
+                if isinstance(interpolate_index, pd.DatetimeIndex):
+                    interpolate_index.name = 'DateTime'
+
+            # add a DataFrame with indices to interpolate, sort the values, drop duplicates if any, and get a
+            # DataFrame on the resampled indices
+            interpolate_df = df.append(pd.DataFrame(index=interpolate_index))
+            interpolate_df.sort_index(kind='mergesort', inplace=True)
+            resampled_df = interpolate_df.interpolate('index')
+            resampled_df.drop_duplicates(keep='first', inplace=True)
+            df = resampled_df.loc[interpolate_index]
+
+        return df[variable_names]
 
     def get_origin(self):
         """Return a DataFrame containing the variable origins.
@@ -336,13 +388,16 @@ class DataManager:
 
         self._check_variable_name(variable_name)
 
-        return pd.DataFrame(self._data.ix[:, variable_name])
+        return pd.DataFrame(self._data.loc[:, variable_name])
 
     def get_variable_names(self):
         """Return a list of variable names.
 
         :return: List of variable names.
         """
+        data_columns = list(self._data.columns)
+        data_columns.sort()
+
         return list(self._data.keys())
 
     def get_variable_observation(self, variable_name, time, time_window_width=0, match_method='nearest'):
@@ -461,6 +516,31 @@ class DataManager:
         return self.add_data_manager(matched_surrogate_data_manager)
 
     @classmethod
+    def read_hdf(cls, path_or_buf, key):
+        """
+
+        :param path_or_buf:
+        :param key:
+        :return:
+        """
+
+        attribute_types = {'_data': pd,
+                           '_data_origin': pd}
+
+        if isinstance(path_or_buf, str):
+            with pd.HDFStore(path_or_buf) as store:
+                attributes = HDFio.read_hdf(store, attribute_types, key)
+        else:
+            attributes = HDFio.read_hdf(path_or_buf, attribute_types, key)
+
+        result = cls.__new__(cls)
+
+        for name, value in attributes.items():
+            setattr(result, name, value)
+
+        return result
+
+    @classmethod
     def read_tab_delimited_data(cls, file_path):
         """Read a tab-delimited file containing a time series and return a DataManager instance.
 
@@ -479,3 +559,18 @@ class DataManager:
         data_origin = pd.DataFrame(data=origin, columns=['variable', 'origin'])
 
         return cls(tab_delimited_df, data_origin)
+
+    def to_hdf(self, path_or_buf, key):
+        """Write instance to an HDF file.
+
+        :param path_or_buf: The path to an HDF file or an open HDFStore instance
+        :param key: Identifier for the group in the HDF file
+        :return:
+        """
+
+        attributes_dict = self.__dict__
+        if isinstance(path_or_buf, str):
+            with pd.HDFStore(path_or_buf) as store:
+                HDFio.to_hdf(store, attributes_dict, key)
+        else:
+            HDFio.to_hdf(path_or_buf, attributes_dict, key)
