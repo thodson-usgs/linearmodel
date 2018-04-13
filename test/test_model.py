@@ -1,3 +1,4 @@
+import copy
 import os
 import tempfile
 import sys
@@ -13,6 +14,10 @@ from test.test_util import create_linear_model_test_data_set
 current_path = os.path.dirname(os.path.realpath(__file__))
 
 model_path = os.path.join(current_path, 'data', 'model')
+
+
+# TODO: Make data set writing optional and remove all test data from repo
+# WRITE_DATA_SET = FALSE
 
 
 class TestModel(unittest.TestCase):
@@ -156,6 +161,19 @@ class TestComplexOLSModel(TestModel):
 
     class_test_case_parameters = {'test_class': ComplexOLSModel}
 
+    def test_equals(self):
+        """Test ComplexOLSModel.equals() and ComplexOLSModel.__eq__()"""
+        test_case_parameters = {'model_variables': {'response_variable': 'y',
+                                                    'explanatory_variables': ['x', 'sqrt(x)']}}
+        test_data = self._create_test_case_data(test_case_parameters)
+        model1 = ComplexOLSModel(test_data, response_variable='y', explanatory_variables=['x', 'sqrt(x)'])
+        model2 = ComplexOLSModel(test_data, response_variable='y', explanatory_variables=['x', 'sqrt(x)'])
+        model3 = ComplexOLSModel(test_data, response_variable='x', explanatory_variables=['y', 'sqrt(y)'])
+
+        self.assertTrue(model1.equals(model2))
+        self.assertTrue(model1 == model2)
+        self.assertFalse(model1.equals(model3))
+
     def test_get_model_report(self):
         """Test ComplexOLSModel.get_model_report()"""
         test_case_parameters = {'model_variables': {'response_variable': 'w',
@@ -222,6 +240,25 @@ class TestCompoundLinearModel(TestModel):
             data_set = data_set.add_data_manager(tmp_data_set)
 
         return data_set
+
+    def test_equals(self):
+        """Test CompoundLinearModel.equals() and CompoundLinearModel.__eq__()"""
+
+        test_data = self.create_compound_test_data_set('y', [['x', 'sqrt(x)'], ['x']], [(0, 10), (10, 20)])
+        model1 = CompoundLinearModel(test_data,
+                                     response_variable='y',
+                                     explanatory_variables=[['x', 'sqrt(x)'], ['x']],
+                                     break_points=[10])
+        model2 = CompoundLinearModel(test_data,
+                                     response_variable='y',
+                                     explanatory_variables=[['x', 'sqrt(x)'], ['x']],
+                                     break_points=[10])
+        model3 = CompoundLinearModel(test_data,
+                                     response_variable='y',
+                                     explanatory_variables=[['x']])
+        self.assertTrue(model1.equals(model2))
+        self.assertTrue(model1 == model2)
+        self.assertFalse(model1.equals(model3))
 
     def test_get_model_report(self):
         """Test CompoundLinearModel.get_model_report()"""
@@ -601,6 +638,18 @@ class TestMultipleOLSModelInit(TestModelInit):
 class TestSimpleOLSModel(TestModel):
     """General test case for SimpleOLSModel"""
 
+    def test_equals(self):
+        """Test SimpleOLSModel.equals() and SimpleOLSModel.__eq__()"""
+        test_case_parameters = {'model_variables': {'response_variable': 'y', 'explanatory_variable': 'x'}}
+        test_data = self._create_test_case_data(test_case_parameters)
+        model1 = SimpleOLSModel(test_data, response_variable='y', explanatory_variable='x')
+        model2 = SimpleOLSModel(test_data, response_variable='y', explanatory_variable='x')
+        model3 = SimpleOLSModel(test_data, response_variable='x', explanatory_variable='y')
+
+        self.assertTrue(model1.equals(model2))
+        self.assertTrue(model1 == model2)
+        self.assertFalse(model1 == model3)
+
     def test_predict_response_variable_with_transformed_response(self):
         """Test SimpleOLSModel.predict_response_variable() with a transformed response variable"""
         test_case_parameters = {'model_variables': {'response_variable': 'w', 'explanatory_variables': ['x']}}
@@ -635,7 +684,7 @@ class TestSimpleOLSModelInit(TestModelInit):
         self._test_model_init(test_case_parameters)
 
 
-class TestOLSModelHDF(unittest.TestCase):
+class TestLinearModelHDF(unittest.TestCase):
     """Test HDF read/write functionality of OLSModel subclasses."""
 
     def setUp(self):
