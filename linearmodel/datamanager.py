@@ -57,6 +57,23 @@ class DataManager(CopyMixin):
             self._data.index.name = 'DateTime'
         self._data_origin = data_origin.copy(deep=True)
 
+    def __eq__(self, other):
+        """
+
+        :param other:
+        :return:
+        """
+
+        return self.equals(other)
+
+    def __ne__(self, other):
+        """
+
+        :param other:
+        :return:
+        """
+        return not self.equals(other)
+
     def _check_for_concurrent_obs(self, other):
         """Check other DataManager for concurrent observations of a variable. Raise ConcurrentObservationError if
         concurrent observations exist.

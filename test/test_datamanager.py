@@ -116,10 +116,20 @@ class TestDataManager(unittest.TestCase):
         self.assertIsNot(dm1, dm2)
 
     def test_equals(self):
-        """Test the DataManager.equals() method"""
+        """Test the DataManager.equals() and __eq__() methods"""
         df1 = create_random_dataframe()
+        dm1 = DataManager(df1)
+        dm2 = DataManager(df1)
 
-        self.assertTrue(df1.equals(df1))
+        self.assertTrue(dm1.equals(dm2))
+        self.assertTrue(dm1 == dm2)
+
+        df3 = create_random_dataframe()
+        dm3 = DataManager(df3)
+
+        self.assertFalse(dm1.equals(dm3))
+        self.assertFalse(dm1 == dm3)
+        self.assertTrue(dm1 != dm3)
 
     def test_to_hdf_buf(self):
         """Test the DataManager.to_hdf() and DataManager.read_hdf() methods when saving with a pd.HDFStore instance"""
