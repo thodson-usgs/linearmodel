@@ -2059,7 +2059,7 @@ class CompoundLinearModel(LinearModel):
         """
 
         # read in the attributes that were stored as HDF, excluding the segment models
-        attribute_types = {'_break_points': np.array,
+        attribute_types = {'_break_points': np.ndarray,
                            '_data_manager': DataManager,
                            '_excluded_observations': pd.DatetimeIndex}
         attributes = HDFio.read_hdf(store, attribute_types, key)

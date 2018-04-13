@@ -20,7 +20,7 @@ class HDFio:
     """Class saving and retrieving an object state to and from an HDF file"""
 
     _scalar_types = (str, bool, type(None))
-    _list_types = (list, tuple, pd.DatetimeIndex, np.ndarray, np.array)  # np.array isn't a list type, but it works, OK?
+    _list_types = (list, tuple, pd.DatetimeIndex)
 
     @staticmethod
     def _dict_from_hdf(store, key):
@@ -108,6 +108,8 @@ class HDFio:
                 attributes[k] = value_type(cls._scalar_from_hdf(store, next_key))
             elif value_type in cls._list_types:
                 attributes[k] = value_type(cls._list_from_hdf(store, next_key))
+            elif value_type is np.ndarray:
+                attributes[k] = np.array(cls._list_from_hdf(store, next_key))
             elif value_type is dict:
                 attributes[k] = cls._dict_from_hdf(store, next_key)
             else:
@@ -136,5 +138,7 @@ class HDFio:
                 cls._list_to_hdf(store, v, next_key)
             elif isinstance(v, dict):
                 cls._dict_to_hdf(store, v, next_key)
+            elif isinstance(v, np.ndarray):
+                cls._list_to_hdf(store, v, next_key)
             else:
                 raise TypeError("Unable to handle type {}".format(v.__class__.__name__))
