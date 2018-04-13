@@ -13,6 +13,7 @@ from statsmodels import api as sm
 from statsmodels.iolib.summary import Summary
 from statsmodels.iolib.table import SimpleTable
 from statsmodels.iolib.tableformatting import fmt_params
+import statsmodels.regression.linear_model
 from statsmodels.sandbox.regression.predstd import wls_prediction_std
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
@@ -173,6 +174,14 @@ class LinearModel(abc.ABC):
 
         self._is_init = True
 
+    def __eq__(self, other):
+
+        return self.equals(other)
+
+    def __ne__(self, other):
+
+        return not self.equals(other)
+
     @staticmethod
     def _add_transformed_variables(variable, dataset):
         """
@@ -292,6 +301,28 @@ class LinearModel(abc.ABC):
         """
         if transform not in TRANSFORM_VARIABLE_TEMPLATES.keys():
             raise InvalidVariableTransformError("{} is an unrecognized transformation.".format(transform))
+
+    def equals(self, other):
+        """
+
+        :param other:
+        :return:
+        """
+
+        if not isinstance(other, self.__class__):
+            return False
+
+        for k, v in self.__dict__.items():
+            if hasattr(v, 'equals'):
+                attribute_equal = v.equals(other.__dict__[k])
+            elif isinstance(v, statsmodels.regression.linear_model.OLS):
+                attribute_equal = linear_model_ols_equal(v, other.__dict__[k])
+            else:
+                attribute_equal = v == other.__dict__[k]
+            if not np.all(attribute_equal):
+                return False
+
+        return True
 
     def exclude_observation(self, observation_time):
         """Exclude observation from the model.
@@ -961,10 +992,10 @@ class OLSModel(LinearModel, abc.ABC):
         :param diagonal:
         """
         response_variable = self._response_variable
-        response_variable_transform, raw_response_variable = self._find_raw_variable(response_variable)
+        response_variable_transform, raw_response_variable = find_raw_variable(response_variable)
         explanatory_df = self._model_dataset
         # format response
-        transform_func = self._transform_functions[response_variable_transform]
+        transform_func = TRANSFORM_FUNCTIONS[response_variable_transform]
         # transform response variable
         response_df  = transform_func(explanatory_df[[raw_response_variable]])
         # and rename the columns to reflect the transformation
@@ -1015,29 +1046,6 @@ class OLSModel(LinearModel, abc.ABC):
             ax.legend(loc='best')
 
         return ax
-
-    def equals(self, other):
-        """
-
-        :param other:
-        :return:
-        """
-
-        models_equal = True
-
-        for k, v in self.__dict__.items():
-            if hasattr(v, 'equals'):
-                attribute_equal = v.equals(other.__dict__[k])
-            elif k == '_model':
-                attribute_equal = linear_model_ols_equal(v, other.__dict__[k])
-            else:
-                attribute_equal = v == other.__dict__[k]
-            if not attribute_equal:
-                print(k + " is not equal")
-                models_equal = False
-                break
-
-        return models_equal
 
     def get_explanatory_variable_summary(self):
         """Get a table of summary statistics for the explanatory variables. The summary statistics include:
@@ -2041,6 +2049,49 @@ class CompoundLinearModel(LinearModel):
 
             self._model.append(segment_model)
 
+    @staticmethod
+    def _read_attributes_from_hdf(store, key):
+        """
+
+        :param store:
+        :param key:
+        :return:
+        """
+
+        # read in the attributes that were stored as HDF, excluding the segment models
+        attribute_types = {'_break_points': np.array,
+                           '_data_manager': DataManager,
+                           '_excluded_observations': pd.DatetimeIndex}
+        attributes = HDFio.read_hdf(store, attribute_types, key)
+
+        # read the segment models from HDF
+        number_of_segments = len(attributes['_break_points']) - 1
+        model_types = {'_model_' + str(i): ComplexOLSModel for i in range(number_of_segments)}
+        segment_models = HDFio.read_hdf(store, model_types, key)
+        attributes.update(segment_models)
+
+        # get the response variable from the first model (they are all the same)
+        attributes['_response_variable'] = segment_models['_model_0'].get_response_variable()
+
+        # get the segment explanatory variables
+        explanatory_variables = []
+        model_names = ['_model_' + str(i) for i in range(number_of_segments)]
+        for model_key in model_names:
+            explan_vars = segment_models[model_key].get_explanatory_variables()
+            explanatory_variables.append(explan_vars)
+
+        attributes['_segment_explanatory_variables'] = tuple([tuple(segment_explanatory_variables) for
+                                                              segment_explanatory_variables in explanatory_variables])
+
+        # find the raw explanatory variable
+        first_explanatory_variable = attributes['_segment_explanatory_variables'][0][0]
+        _, raw_explanatory_variable = find_raw_variable(first_explanatory_variable)
+        attributes['_explanatory_variables'] = [raw_explanatory_variable]
+
+        attributes['_is_init'] = True
+
+        return attributes
+
     def get_break_points(self):
         """Returns the current break_points used in the model
 
@@ -2245,6 +2296,30 @@ class CompoundLinearModel(LinearModel):
 
         return predicted
 
+    @classmethod
+    def read_hdf(cls, path_or_buff, key):
+        """
+
+        :param path_or_buff:
+        :param key:
+        :return:
+        """
+
+        if isinstance(path_or_buff, str):
+            with pd.HDFStore(path_or_buff) as store:
+                attributes = cls._read_attributes_from_hdf(store, key)
+        else:
+            attributes = cls._read_attributes_from_hdf(path_or_buff, key)
+
+        result = cls.__new__(cls)
+
+        for name, value in attributes.items():
+            setattr(result, name, value)
+
+        result._update_model()
+
+        return result
+
     def reset_break_points(self):
         """Reset the break_points in the model to -inf and +inf. Reduces the segment count to one. Set the explanatory
         variables to the variables used in the first segment.
@@ -2342,3 +2417,25 @@ class CompoundLinearModel(LinearModel):
 
         if self._is_init:
             self._update_model()
+
+    def to_hdf(self, path_or_buff, key):
+        """
+
+        :param path_or_buff:
+        :param key:
+        :return:
+        """
+
+        attributes_to_save = ['_break_points',
+                              '_data_manager',
+                              '_excluded_observations']
+        attributes_dict = {name: self.__dict__[name] for name in attributes_to_save}
+
+        segment_model_dict = {'_model_' + str(i): self._model[i] for i in range(len(self._model))}
+        attributes_dict.update(segment_model_dict)
+
+        if isinstance(path_or_buff, str):
+            with pd.HDFStore(path_or_buff) as store:
+                HDFio.to_hdf(store, attributes_dict, key)
+        else:
+            HDFio.to_hdf(path_or_buff, attributes_dict, key)
