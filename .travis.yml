@@ -8,8 +8,7 @@ install:
   - pip install coverage
   - pip install -r requirements.txt
 script:
-  - python -m unittest test_linearmodel.py
-  - coverage run --source=./linearmodel/ test_linearmodel.py
+  - coverage run --source=./linearmodel/ --omit=./linearmodel/gui/* test_linearmodel.py
   - coverage report
 after_success:
   - coveralls
