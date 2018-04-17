@@ -15,5 +15,5 @@ setup(
         'Programming Language :: Python 3.6'
     ],
     python_requires='>=3',
-    install_requires=['matplotlib', 'numpy', 'pandas', 'statsmodels', 'scipy', 'pytables']
+    install_requires=[]  # TODO: Set this up properly
 )
