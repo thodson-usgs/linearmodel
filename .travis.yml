@@ -1,0 +1,16 @@
+language: python
+python:
+  - "3.6"
+notifications:
+    email: false
+
+install:
+  - pip install coverage
+  - pip install -r requirements.txt
+script:
+  - pytest
+  - coverage run --source=./linearmodel/ test_linearmodel.py
+  - coverage report
+after_success:
+  - coveralls
+  
