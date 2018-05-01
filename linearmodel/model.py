@@ -676,7 +676,7 @@ class OLSModel(LinearModel, abc.ABC):
         exog_idx = range(len(xname))
 
         # center confidence intervals if they are unequal lengths
-        confint = ["%s %s" % tuple(map(forg, conf_int.ix[i])) for i in exog_idx]
+        confint = ["%s %s" % tuple(map(forg, conf_int.iloc[i])) for i in exog_idx]
         len_ci = list(map(len, confint))
         max_ci = max(len_ci)
         min_ci = min(len_ci)
@@ -761,7 +761,7 @@ class OLSModel(LinearModel, abc.ABC):
 
             variable_transform, raw_variable_name = find_raw_variable(variable)
 
-            raw_variable_series = self._model_dataset.ix[~excluded_observations, raw_variable_name]
+            raw_variable_series = self._model_dataset.loc[~excluded_observations, raw_variable_name]
 
             if variable_transform:
                 transform_function = TRANSFORM_FUNCTIONS[variable_transform]
@@ -1096,7 +1096,7 @@ class OLSModel(LinearModel, abc.ABC):
 
         # add estimated response
         _, raw_response_variable = find_raw_variable(self._response_variable)
-        explanatory_data = DataManager(self._model_dataset.ix[model_data_index, :], self._model_data_origin)
+        explanatory_data = DataManager(self._model_dataset.loc[model_data_index, :], self._model_data_origin)
         predicted_response = self.predict_response_variable(explanatory_data=explanatory_data, raw_response=True,
                                                             bias_correction=True)
         estimated_response = predicted_response[raw_response_variable]
@@ -1864,8 +1864,8 @@ class ComplexOLSModel(MultipleOLSModel):
             excluded_and_missing_index = model_dataset['Excluded'] & model_dataset['Missing']
             explanatory_variable = self.get_explanatory_variables()[0]
             response_variable = self.get_response_variable()
-            x_obs = model_dataset.ix[~excluded_and_missing_index, explanatory_variable].as_matrix()
-            y_obs = model_dataset.ix[~excluded_and_missing_index, response_variable].as_matrix()
+            x_obs = model_dataset.loc[~excluded_and_missing_index, explanatory_variable].as_matrix()
+            y_obs = model_dataset.loc[~excluded_and_missing_index, response_variable].as_matrix()
 
             # get a fitted exogenous matrix
             x_fit = np.linspace(np.min(x_obs), np.max(x_obs))
@@ -2288,7 +2288,7 @@ class CompoundLinearModel(LinearModel):
             lower_bound = self._break_points[i]
             upper_bound = self._break_points[i + 1]
             segment_index = (lower_bound <= explanatory_series) & (explanatory_series < upper_bound)
-            predictor_data_manager = DataManager(explanatory_df.ix[segment_index, :], explanatory_origin)
+            predictor_data_manager = DataManager(explanatory_df.loc[segment_index, :], explanatory_origin)
             segment_predicted = self._model[i].predict_response_variable(explanatory_data=predictor_data_manager,
                                                                          bias_correction=bias_correction,
                                                                          prediction_interval=prediction_interval)

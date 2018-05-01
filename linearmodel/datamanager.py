@@ -267,11 +267,11 @@ class DataManager(CopyMixin):
 
             elif variable in old_df.keys():
 
-                combined_df.ix[old_df.index, variable] = old_df[variable]
+                combined_df.loc[old_df.index, variable] = old_df[variable]
 
             elif variable in new_df.keys():
 
-                combined_df.ix[new_df.index, variable] = new_df[variable]
+                combined_df.loc[new_df.index, variable] = new_df[variable]
 
         combined_df = combined_df.apply(pd.to_numeric, args=('ignore', ))
 
@@ -431,7 +431,7 @@ class DataManager(CopyMixin):
 
         if time_window_width == 0 and match_method == 'nearest':
             try:
-                variable_observation = self._data.ix[time, variable_name]
+                variable_observation = self._data.loc[time, variable_name]
             except KeyError as err:
                 if err.args[0] == time:
                     variable_observation = None
@@ -449,7 +449,7 @@ class DataManager(CopyMixin):
             if match_method == 'nearest':
                 try:
                     nearest_index = variable.index.get_loc(time, method='nearest', tolerance=time_diff)
-                    nearest_observation = variable.ix[nearest_index]
+                    nearest_observation = variable.iloc[nearest_index]
                     variable_observation = nearest_observation.as_matrix()[0]
                 except KeyError:
                     variable_observation = np.nan
@@ -459,7 +459,7 @@ class DataManager(CopyMixin):
                 beginning_time = time - time_diff
                 ending_time = time + time_diff
                 time_window = (beginning_time < variable.index) & (variable.index <= ending_time)
-                variable_near_time = variable.ix[time_window]
+                variable_near_time = variable.iloc[time_window]
                 variable_observation = variable_near_time.mean()
 
             else:

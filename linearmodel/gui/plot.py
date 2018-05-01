@@ -64,7 +64,7 @@ class ModelPlotCanvas(FigureCanvas):
         x_index = np.in1d(model_data[x_variable], line_data[0])
         y_index = np.in1d(model_data[y_variable], line_data[1])
 
-        return model_data.ix[x_index & y_index, 'Obs. number'].values
+        return model_data.loc[x_index & y_index, 'Obs. number'].values
 
     def _on_click(self, event):
 
