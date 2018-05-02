@@ -293,7 +293,7 @@ class DataManager(CopyMixin):
 
         variables = list(data_df)
 
-        if isinstance(data_path, str):
+        if isinstance(data_path, str) or not hasattr(data_path, '__iter__'):
             data_path = [data_path]
 
         data = []
