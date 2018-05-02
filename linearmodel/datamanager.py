@@ -337,7 +337,13 @@ class DataManager(CopyMixin):
         data_origin_self = self.get_origin()
         data_origin_other = other.get_origin()
 
-        return data_self.equals(data_other) and data_origin_self.equals(data_origin_other)
+        try:
+            data_equals = np.all(np.isclose(data_self.as_matrix(), data_other.as_matrix(),
+                                            rtol=0, atol=0, equal_nan=True))
+        except ValueError:
+            return False
+
+        return data_equals and data_origin_self.equals(data_origin_other)
 
     def get_data(self, index_step=None, interpolate_index=None):
         """Returns a Pandas DataFrame containing managed data.
