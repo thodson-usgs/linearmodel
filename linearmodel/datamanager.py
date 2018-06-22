@@ -340,7 +340,10 @@ class DataManager(CopyMixin):
         try:
             data_equals = np.all(np.isclose(data_self.as_matrix(), data_other.as_matrix(),
                                             rtol=0, atol=0, equal_nan=True))
+            pd.testing.assert_index_equal(data_self.index, data_other.index)
         except ValueError:
+            return False
+        except AssertionError:
             return False
 
         return data_equals and data_origin_self.equals(data_origin_other)
