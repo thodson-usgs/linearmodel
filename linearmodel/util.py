@@ -15,6 +15,10 @@ class CopyMixin:
             setattr(result, k, copy.deepcopy(v, memo))
         return result
 
+    def deepcopy(self):
+
+        return copy.deepcopy(self)
+
 
 class HDFio:
     """Class saving and retrieving an object state to and from an HDF file"""
