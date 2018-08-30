@@ -144,7 +144,7 @@ class TestDataManager(unittest.TestCase):
         dm2_path = os.path.join(test_data_path, 'dm2.txt')
         dm2 = DataManager.read_tab_delimited_data(dm2_path)
 
-        dm3 = dm1.match_data(dm2, time_window_width=30, match_method='mean')
+        dm3 = dm1.match_data(dm2, variable_names=['B'], time_window_width=30, match_method='mean')
 
         expected_data_path = os.path.join(test_data_path, 'dm3.txt')
         expected_data = pd.read_csv(expected_data_path, index_col='DateTime', sep='\t', parse_dates=True)
