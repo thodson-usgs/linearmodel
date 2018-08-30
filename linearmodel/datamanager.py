@@ -279,8 +279,9 @@ class DataManager(CopyMixin):
         combined_data_origin = data_origin.append(other._data_origin)
         combined_data_origin.drop_duplicates(inplace=True)
         combined_data_origin.reset_index(drop=True, inplace=True)
+        combined_data_manager = DataManager(combined_df, combined_data_origin)
 
-        return type(self)(combined_df, combined_data_origin)
+        return combined_data_manager
 
     @staticmethod
     def create_data_origin(data_df, data_path):
@@ -507,11 +508,10 @@ class DataManager(CopyMixin):
         # initialize data for a DataManager
         matched_data = pd.DataFrame(index=self._data.index)
         variable_origin_data = []
+        variable_names = other.get_variable_names()
 
-        if variable_name is None:
-            variable_names = other.get_variable_names()
-        else:
-            variable_names = [variable_name]
+        if variable_name in variable_names:
+            variable_names.remove(variable_name)
 
         for variable in variable_names:
 
