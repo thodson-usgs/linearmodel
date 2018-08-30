@@ -468,7 +468,7 @@ class DataManager(CopyMixin):
             elif match_method == 'mean':
                 beginning_time = time - time_diff
                 ending_time = time + time_diff
-                time_window = (beginning_time < variable.index) & (variable.index <= ending_time)
+                time_window = (beginning_time <= variable.index) & (variable.index <= ending_time)
                 variable_near_time = variable.iloc[time_window]
                 variable_observation = variable_near_time.mean()
 
