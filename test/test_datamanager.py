@@ -131,6 +131,26 @@ class TestDataManager(unittest.TestCase):
         self.assertFalse(dm1 == dm3)
         self.assertTrue(dm1 != dm3)
 
+    def test_match_data(self):
+        """
+
+        :return:
+        """
+
+        test_data_path = os.path.join(current_path, 'data', 'datamanager', 'test_match_data')
+        dm1_path = os.path.join(test_data_path, 'dm1.txt')
+        dm1 = DataManager.read_tab_delimited_data(dm1_path)
+
+        dm2_path = os.path.join(test_data_path, 'dm2.txt')
+        dm2 = DataManager.read_tab_delimited_data(dm2_path)
+
+        dm3 = dm1.match_data(dm2, variable_names=['B'], time_window_width=30, match_method='mean')
+
+        expected_data_path = os.path.join(test_data_path, 'dm3.txt')
+        expected_data = pd.read_csv(expected_data_path, index_col='DateTime', sep='\t', parse_dates=True)
+
+        self.assertTrue(np.allclose(dm3.get_data().as_matrix(), expected_data.as_matrix(), atol=1e-4))
+
     def test_to_hdf_buf(self):
         """Test the DataManager.to_hdf() and DataManager.read_hdf() methods when saving with a pd.HDFStore instance"""
 

@@ -279,8 +279,9 @@ class DataManager(CopyMixin):
         combined_data_origin = data_origin.append(other._data_origin)
         combined_data_origin.drop_duplicates(inplace=True)
         combined_data_origin.reset_index(drop=True, inplace=True)
+        combined_data_manager = self.__class__(combined_df, combined_data_origin)
 
-        return type(self)(combined_df, combined_data_origin)
+        return combined_data_manager
 
     @staticmethod
     def create_data_origin(data_df, data_path):
@@ -467,7 +468,7 @@ class DataManager(CopyMixin):
             elif match_method == 'mean':
                 beginning_time = time - time_diff
                 ending_time = time + time_diff
-                time_window = (beginning_time < variable.index) & (variable.index <= ending_time)
+                time_window = (beginning_time <= variable.index) & (variable.index <= ending_time)
                 variable_near_time = variable.iloc[time_window]
                 variable_observation = variable_near_time.mean()
 
@@ -494,11 +495,11 @@ class DataManager(CopyMixin):
 
         return variable_origin
 
-    def match_data(self, other, variable_name=None, time_window_width=0, match_method='nearest'):
+    def match_data(self, other, variable_names=None, time_window_width=0, match_method='nearest'):
         """
 
         :param other:
-        :param variable_name:
+        :param variable_names: Iterable containing variable names in other
         :param time_window_width:
         :param match_method:
         :return:
@@ -508,18 +509,16 @@ class DataManager(CopyMixin):
         matched_data = pd.DataFrame(index=self._data.index)
         variable_origin_data = []
 
-        if variable_name is None:
+        if variable_names is None:
             variable_names = other.get_variable_names()
-        else:
-            variable_names = [variable_name]
 
         for variable in variable_names:
 
-            # skip adding the variable if it's in the constituent data set
+            # skip adding the variable if it's in self
             if variable in self.get_variable_names():
                 continue
 
-            # iterate through all rows and add the matched surrogate observation
+            # iterate through all rows and add the matched other observation
             variable_series = pd.Series(index=matched_data.index, name=variable)
             for index, _ in matched_data.iterrows():
                 observation_value = other.get_variable_observation(variable, index,
@@ -538,7 +537,7 @@ class DataManager(CopyMixin):
         surrogate_variable_origin = pd.DataFrame(data=variable_origin_data, columns=['variable', 'origin'])
         matched_surrogate_data_manager = DataManager(matched_data, surrogate_variable_origin)
 
-        # add the matched surrogate data manager to the constituent data manager
+        # add the data matched from other to self
         return self.add_data_manager(matched_surrogate_data_manager)
 
     @classmethod
