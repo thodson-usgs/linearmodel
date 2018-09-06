@@ -23,7 +23,7 @@ class CopyMixin:
 class HDFio:
     """Class saving and retrieving an object state to and from an HDF file"""
 
-    _scalar_types = (str, bool, type(None))
+    _scalar_types = (str, bool, type(None), int)
     _list_types = (list, tuple, pd.DatetimeIndex)
 
     @staticmethod
