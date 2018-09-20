@@ -339,7 +339,7 @@ class DataManager(CopyMixin):
         data_origin_other = other.get_origin()
 
         try:
-            data_equals = np.all(np.isclose(data_self.values, data_other.as_matrix(),
+            data_equals = np.all(np.isclose(data_self.values, data_other.values,
                                             rtol=0, atol=0, equal_nan=True))
             pd.testing.assert_index_equal(data_self.index, data_other.index)
         except ValueError:
@@ -460,7 +460,7 @@ class DataManager(CopyMixin):
                 try:
                     nearest_index = variable.index.get_loc(time, method='nearest', tolerance=time_diff)
                     nearest_observation = variable.iloc[nearest_index]
-                    variable_observation = nearest_observation.as_matrix()[0]
+                    variable_observation = nearest_observation.values[0]
                 except KeyError:
                     variable_observation = np.nan
 

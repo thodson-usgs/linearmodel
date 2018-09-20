@@ -127,7 +127,7 @@ class TestModel(unittest.TestCase):
         # test that the model results are close enough to the expected results
         model_dataset = model.get_model_dataset()
         fitted_results = model_dataset[expected_fitted_results.keys()]
-        is_close = np.isclose(fitted_results.as_matrix(), expected_fitted_results.as_matrix(), equal_nan=True)
+        is_close = np.isclose(fitted_results.values, expected_fitted_results.values, equal_nan=True)
         self.assertTrue(np.all(is_close))
 
 

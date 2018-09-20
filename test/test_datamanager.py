@@ -149,7 +149,7 @@ class TestDataManager(unittest.TestCase):
         expected_data_path = os.path.join(test_data_path, 'dm3.txt')
         expected_data = pd.read_csv(expected_data_path, index_col='DateTime', sep='\t', parse_dates=True)
 
-        self.assertTrue(np.allclose(dm3.get_data().as_matrix(), expected_data.as_matrix(), atol=1e-4))
+        self.assertTrue(np.allclose(dm3.get_data().values, expected_data.values, atol=1e-4))
 
     def test_to_hdf_buf(self):
         """Test the DataManager.to_hdf() and DataManager.read_hdf() methods when saving with a pd.HDFStore instance"""
