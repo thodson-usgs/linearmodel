@@ -244,7 +244,7 @@ class LinearModel(abc.ABC):
 
         model_dataset = self.get_model_dataset()
         index_as_str = np.expand_dims(model_dataset.index.astype(str), 1)
-        observation_data = np.column_stack((index_as_str, model_dataset.as_matrix()))
+        observation_data = np.column_stack((index_as_str, model_dataset.values))
         observation_data_headers = ['DateTime']
         observation_data_headers.extend(model_dataset.keys())
         observation_table = SimpleTable(data=observation_data,
@@ -515,7 +515,7 @@ class OLSModel(LinearModel, abc.ABC):
 
         res = self._model.fit()
 
-        residuals = res.resid.as_matrix()
+        residuals = res.resid.values
         residuals = np.expand_dims(residuals, axis=0)
         residuals = np.expand_dims(residuals, axis=2)
         residuals = np.tile(residuals, (response_data.shape[0], 1, response_data.shape[2]))
@@ -1150,7 +1150,7 @@ class OLSModel(LinearModel, abc.ABC):
         """
 
         results = self._model.fit()
-        model_params = np.expand_dims(results.params.as_matrix(), 1)
+        model_params = np.expand_dims(results.params.values, 1)
         return model_params
 
     def get_model_report(self):
@@ -1540,7 +1540,7 @@ class SimpleOLSModel(OLSModel):
         explanatory_df = pd.DataFrame(data=explanatory_fit, columns=[raw_explanatory_variable])
 
         # get the fitted response and confidence intervals
-        exog_fit = self._get_exogenous_matrix(explanatory_df).as_matrix()
+        exog_fit = self._get_exogenous_matrix(explanatory_df).values
         y_fit, l_ci, u_ci = self._get_model_confidence_mean(exog_fit)
 
         if ax is None:
@@ -1864,13 +1864,13 @@ class ComplexOLSModel(MultipleOLSModel):
             excluded_and_missing_index = model_dataset['Excluded'] & model_dataset['Missing']
             explanatory_variable = self.get_explanatory_variables()[0]
             response_variable = self.get_response_variable()
-            x_obs = model_dataset.loc[~excluded_and_missing_index, explanatory_variable].as_matrix()
-            y_obs = model_dataset.loc[~excluded_and_missing_index, response_variable].as_matrix()
+            x_obs = model_dataset.loc[~excluded_and_missing_index, explanatory_variable].values
+            y_obs = model_dataset.loc[~excluded_and_missing_index, response_variable].values
 
             # get a fitted exogenous matrix
             x_fit = np.linspace(np.min(x_obs), np.max(x_obs))
             x_df = pd.DataFrame(data=x_fit, columns=[self.get_explanatory_variables()[0]])
-            exog_fit = self._get_exogenous_matrix(x_df).as_matrix()
+            exog_fit = self._get_exogenous_matrix(x_df).values
 
             # get the inversely transformed fitted response variable and confidence intervals
             y_fit, l_ci, u_ci = self._get_model_confidence_mean(exog_fit)

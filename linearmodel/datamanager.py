@@ -339,7 +339,7 @@ class DataManager(CopyMixin):
         data_origin_other = other.get_origin()
 
         try:
-            data_equals = np.all(np.isclose(data_self.as_matrix(), data_other.as_matrix(),
+            data_equals = np.all(np.isclose(data_self.values, data_other.as_matrix(),
                                             rtol=0, atol=0, equal_nan=True))
             pd.testing.assert_index_equal(data_self.index, data_other.index)
         except ValueError:

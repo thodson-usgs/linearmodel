@@ -38,8 +38,8 @@ nbconvert==5.3.1
 nbformat==4.4.0
 notebook==5.4.1
 numexpr==2.6.4
-numpy==1.12.1
-pandas==0.22.0
+numpy==1.14.2
+pandas==0.23.4
 pandocfilters==1.4.2
 parso==0.1.1
 patsy==0.5.0
@@ -64,7 +64,7 @@ Send2Trash==1.4.2
 service-identity==17.0.0
 simplegeneric==0.8.1
 six==1.11.0
-statsmodels==0.8.0
+statsmodels==0.9.0
 tables==3.4.2
 terminado==0.8.1
 testpath==0.3.1
