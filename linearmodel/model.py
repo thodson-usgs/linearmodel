@@ -1336,7 +1336,7 @@ class OLSModel(LinearModel, abc.ABC):
         if prediction_interval:
 
             # confidence level for two - sided hypothesis
-            confidence_level = 0.1  # 90% prediction interval
+            confidence_level = 0.05  # 95% prediction interval
             confidence_level_text = '{:.1f}'.format(100 * (1 - confidence_level))
 
             _, interval_l, interval_u = wls_prediction_std(res, exog=exog, alpha=confidence_level)
@@ -1875,7 +1875,6 @@ class ComplexOLSModel(MultipleOLSModel):
             # get the inversely transformed fitted response variable and confidence intervals
             y_fit, l_ci, u_ci = self._get_model_confidence_mean(exog_fit)
             response_variable_transform, _ = find_raw_variable(response_variable)
-            # response_variable_transform = self._get_variable_transform(response_variable)
             response_inverse_func = INVERSE_TRANSFORM_FUNCTIONS[response_variable_transform]
             y_fit = response_inverse_func(y_fit)
             l_ci = response_inverse_func(l_ci)
