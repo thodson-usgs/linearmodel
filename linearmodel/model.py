@@ -299,8 +299,19 @@ class LinearModel(abc.ABC):
         :type transform: str
         :return: bool
         """
-        if transform not in TRANSFORM_VARIABLE_TEMPLATES.keys():
-            raise InvalidVariableTransformError("{} is an unrecognized transformation.".format(transform))
+        #XXX added by TOH
+        if type(transform) is list:
+            for t in transform:
+                if t not in TRANSFORM_VARIABLE_TEMPLATES.keys():
+                    raise InvalidVariableTransformError("{} is an unrecognized transformation.".format(transform))
+
+        elif type(transform) is str:
+            if transform not in TRANSFORM_VARIABLE_TEMPLATES.keys():
+                raise InvalidVariableTransformError("{} is an unrecognized transformation.".format(transform))
+        # original code below
+        #if transform not in TRANSFORM_VARIABLE_TEMPLATES.keys():
+        #    raise InvalidVariableTransformError("{} is an unrecognized transformation.".format(transform))
+
 
     def equals(self, other):
         """
@@ -1336,7 +1347,8 @@ class OLSModel(LinearModel, abc.ABC):
         if prediction_interval:
 
             # confidence level for two - sided hypothesis
-            confidence_level = 0.05  # 95% prediction interval
+            #confidence_level = 0.05  # 95% prediction interval
+            confidence_level = 0.1  # XXX TOH 2019-03-21
             confidence_level_text = '{:.1f}'.format(100 * (1 - confidence_level))
 
             _, interval_l, interval_u = wls_prediction_std(res, exog=exog, alpha=confidence_level)
